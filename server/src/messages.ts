@@ -13,6 +13,8 @@ type Row = {
   commitSha: string | null
   durationMs: number | null
   createdAt: Date
+  authorId: string | null
+  authorName?: string | null
 }
 
 export type StoredMessage = Row
@@ -27,14 +29,16 @@ export const toMessage = (r: Row): Message => ({
   durationMs: r.durationMs,
   mode: r.mode,
   createdAt: r.createdAt.toISOString(),
+  authorId: r.authorId,
+  authorName: r.authorName ?? null,
 })
 
-export async function create(projectId: string, role: 'user' | 'assistant', parts: Part[], opts: { mode?: ChatMode; status?: MessageStatus } = {}): Promise<Row> {
+export async function create(projectId: string, role: 'user' | 'assistant', parts: Part[], opts: { mode?: ChatMode; status?: MessageStatus; author?: { id: string; name: string } } = {}): Promise<Row> {
   const [row] = await sql<Row[]>`
-    insert into messages (project_id, role, parts, mode, status)
-    values (${projectId}, ${role}, ${sql.json(parts as never)}, ${opts.mode ?? 'build'}, ${opts.status ?? 'done'})
+    insert into messages (project_id, role, parts, mode, status, author_id)
+    values (${projectId}, ${role}, ${sql.json(parts as never)}, ${opts.mode ?? 'build'}, ${opts.status ?? 'done'}, ${opts.author?.id ?? null})
     returning *`
-  return row
+  return { ...row, authorName: opts.author?.name ?? null }
 }
 
 export async function save(id: string, fields: { parts?: Part[]; transcript?: ChatCompletionMessageParam[]; status?: MessageStatus; commitSha?: string | null; durationMs?: number }) {
@@ -49,7 +53,9 @@ export async function save(id: string, fields: { parts?: Part[]; transcript?: Ch
 }
 
 export async function list(projectId: string): Promise<Row[]> {
-  return sql<Row[]>`select * from messages where project_id = ${projectId} order by created_at, id`
+  return sql<Row[]>`
+    select m.*, (select name from users where id = m.author_id) as author_name
+    from messages m where m.project_id = ${projectId} order by m.created_at, m.id`
 }
 
 export async function get(id: string): Promise<Row | undefined> {

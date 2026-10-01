@@ -1,4 +1,5 @@
 import type { Message, Part, ReasoningPart, ToolPart, VersionPart } from '@shared/types'
+import { useQuery } from '@tanstack/react-query'
 import {
   AlertCircle,
   Brain,
@@ -42,6 +43,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { api } from '@/lib/api'
 import { duration } from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { Markdown } from './markdown'
@@ -67,8 +69,10 @@ export function UserMessage({ message, onEdit }: { message: Message; onEdit?: (t
   const text = message.parts.find((p) => p.type === 'text')?.text
   const images = message.parts.filter((p) => p.type === 'image')
   const elements = message.parts.flatMap((p) => (p.type === 'elements' ? p.elements : []))
+  const { data: me } = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: Infinity })
   return (
     <div className="group/user flex flex-col items-end gap-1.5 pl-10">
+      {message.authorName && me && message.authorId !== me.id && <span className="px-1 text-xs text-muted-foreground">{message.authorName}</span>}
       {images.length > 0 && (
         <div className="flex flex-wrap justify-end gap-2">
           {images.map((img) => (

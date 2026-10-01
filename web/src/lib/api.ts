@@ -1,5 +1,5 @@
 import type { StyleChanges } from '@shared/styles'
-import type { Message, ModelInfo, Project, SandboxStatus, SelectedElement, Version } from '@shared/types'
+import type { Message, ModelInfo, Project, SandboxStatus, SelectedElement, Sharing, Version } from '@shared/types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -44,6 +44,8 @@ export const api = {
   project: (id: string) => request<ProjectDetail>(`/projects/${id}`),
   remix: (id: string) => request<Project>(`/projects/${id}/remix`, { method: 'POST' }),
   updateProject: (id: string, input: { name?: string; model?: string; instructions?: string }) => request<Project>(`/projects/${id}`, { method: 'PATCH', body: json(input) }),
+  sharing: (id: string) => request<Sharing>(`/projects/${id}/sharing`),
+  setSharing: (id: string, input: Pick<Sharing, 'everyone' | 'members'>) => request<Sharing>(`/projects/${id}/sharing`, { method: 'PUT', body: json(input) }),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
   messages: (id: string) => request<Message[]>(`/projects/${id}/messages`),
   send: (id: string, input: SendInput) => request<Message>(`/projects/${id}/messages`, { method: 'POST', body: json(input) }),

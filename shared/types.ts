@@ -69,6 +69,16 @@ export type Message = {
   durationMs: number | null
   mode: ChatMode
   createdAt: string
+  authorId?: string | null
+  authorName?: string | null
+}
+
+export type Access = 'owner' | 'edit' | 'view'
+export type ShareAccess = Exclude<Access, 'owner'>
+export type Sharing = {
+  everyone: ShareAccess | null
+  members: { userId: string; access: ShareAccess }[]
+  people: { id: string; name: string; email: string | null }[]
 }
 
 export type Project = {
@@ -83,6 +93,7 @@ export type Project = {
   previewUrl: string
   ownerName?: string
   mine?: boolean
+  access?: Access
 }
 
 export type Version = { sha: string; title: string; createdAt: string; good: boolean; current: boolean }

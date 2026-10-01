@@ -147,7 +147,8 @@ function ProjectCard({ project }: { project: Project }) {
         <div className="flex flex-col px-1">
           <span className="truncate pr-8 text-sm font-medium">{project.name}</span>
           <span className="truncate text-xs text-muted-foreground">
-            {project.mine === false && project.ownerName ? `${project.ownerName} · ` : ''}Edited {timeAgo(project.updatedAt)}
+            {project.mine === false && project.ownerName ? `${project.ownerName} · ` : ''}
+            {project.access === 'view' ? 'View only · ' : ''}Edited {timeAgo(project.updatedAt)}
           </span>
         </div>
       </Link>
@@ -158,9 +159,11 @@ function ProjectCard({ project }: { project: Project }) {
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={() => setRenaming(true)}>
-            <Pencil /> Rename
-          </DropdownMenuItem>
+          {project.access === 'owner' && (
+            <DropdownMenuItem onSelect={() => setRenaming(true)}>
+              <Pencil /> Rename
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             onSelect={() =>
               void api
@@ -174,9 +177,11 @@ function ProjectCard({ project }: { project: Project }) {
           >
             <Copy /> Remix
           </DropdownMenuItem>
-          <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
-            <Trash2 /> Delete
-          </DropdownMenuItem>
+          {project.access === 'owner' && (
+            <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
+              <Trash2 /> Delete
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <RenameDialog project={project} open={renaming} onOpenChange={setRenaming} />

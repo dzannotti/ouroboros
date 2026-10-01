@@ -6,7 +6,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { streamSSE } from 'hono/streaming'
 import type { StyleChanges } from '../../shared/styles.ts'
-import type { ChatMode, Part, ProjectEvent, SelectedElement, Version } from '../../shared/types.ts'
+import type { Access, ChatMode, Part, ProjectEvent, SelectedElement, Version } from '../../shared/types.ts'
 import * as agent from './agent/run.ts'
 import { type User, auth } from './auth.ts'
 import { config, models, projectDir } from './config.ts'
@@ -53,11 +53,11 @@ function userParts(input: { text?: string; images?: { url: string; name: string 
   return parts
 }
 
-async function send(projectId: string, input: { text?: string; images?: { url: string; name: string }[]; elements?: SelectedElement[]; mode?: unknown; model?: unknown }) {
+async function send(projectId: string, author: User, input: { text?: string; images?: { url: string; name: string }[]; elements?: SelectedElement[]; mode?: unknown; model?: unknown }) {
   if (agent.isRunning(projectId)) throw new HTTPException(409, { message: 'Ouroboros is still working on the previous message' })
   const row = await projects.update(projectId, projects.isModel(input.model) ? { model: input.model } : {})
   await answerOpenQuestions(projectId)
-  const user = await messages.create(projectId, 'user', userParts(input), { mode: mode(input.mode) })
+  const user = await messages.create(projectId, 'user', userParts(input), { mode: mode(input.mode), author })
   publish(projectId, { type: 'message', message: messages.toMessage(user) })
   await agent.startRun({ projectId, userMessageId: user.id, mode: mode(input.mode), model: row.model })
   return user
@@ -86,20 +86,22 @@ api.post('/projects', async (c) => {
   const name = input.text.trim().split(/\s+/).slice(0, 5).join(' ').slice(0, 40)
   const project = await projects.create(c.get('user').id, name, input.model ?? config.ai.defaultModel)
   void sandbox.ensure(project.id).catch(() => {})
-  if (!input.draft) await send(project.id, { text: input.text, mode: input.mode, model: project.model })
+  if (!input.draft) await send(project.id, c.get('user'), { text: input.text, mode: input.mode, model: project.model })
   return c.json(project, 201)
 })
 
-const owned = async (c: { req: { param: (k: string) => string }; get: (k: 'user') => User }) => projects.get(c.get('user'), c.req.param('id'))
+/** Loads the project if the caller may use it: reading needs view access, changing needs edit, unless `need` says otherwise. */
+const owned = async (c: { req: { param: (k: string) => string; method: string }; get: (k: 'user') => User }, need?: Access) =>
+  projects.get(c.get('user'), c.req.param('id'), need ?? (c.req.method === 'GET' ? 'view' : 'edit'))
 
 api.get('/projects/:id', async (c) => {
   const row = await owned(c)
   void sandbox.ensure(row.id).catch(() => {})
-  return c.json({ ...projects.toProject(row), sandbox: sandbox.status(row.id), running: agent.runningMessage(row.id) ?? null })
+  return c.json({ ...projects.toProject(row), access: row.access, ownerName: row.ownerName, mine: row.ownerId === c.get('user').id, sandbox: sandbox.status(row.id), running: agent.runningMessage(row.id) ?? null })
 })
 
 api.patch('/projects/:id', async (c) => {
-  await owned(c)
+  await owned(c, 'owner')
   const input = await body<{ name?: string; model?: string; instructions?: string }>(c)
   const project = await projects.update(c.req.param('id'), {
     name: typeof input.name === 'string' && input.name.trim() ? input.name.trim().slice(0, 60) : undefined,
@@ -110,13 +112,17 @@ api.patch('/projects/:id', async (c) => {
   return c.json(project)
 })
 
+api.get('/projects/:id/sharing', async (c) => c.json(await projects.sharing(await owned(c, 'owner'))))
+
+api.put('/projects/:id/sharing', async (c) => c.json(await projects.setSharing(await owned(c, 'owner'), await body(c))))
+
 api.post('/projects/:id/remix', async (c) => {
-  const row = await owned(c)
+  const row = await owned(c, 'view')
   return c.json(await projects.remix(c.get('user').id, row), 201)
 })
 
 api.delete('/projects/:id', async (c) => {
-  await owned(c)
+  await owned(c, 'owner')
   agent.stop(c.req.param('id'))
   await projects.remove(c.req.param('id'))
   return c.body(null, 204)
@@ -129,7 +135,7 @@ api.get('/projects/:id/messages', async (c) => {
 
 api.post('/projects/:id/messages', async (c) => {
   await owned(c)
-  const user = await send(c.req.param('id'), await body(c))
+  const user = await send(c.req.param('id'), c.get('user'), await body(c))
   return c.json(messages.toMessage(user), 201)
 })
 
@@ -222,7 +228,7 @@ api.get('/projects/:id/versions/:sha/diff', async (c) => {
 })
 
 api.post('/projects/:id/versions/:sha/preview', async (c) => {
-  const row = await owned(c)
+  const row = await owned(c, 'view')
   const sha = c.req.param('sha')
   if (!/^[0-9a-f]{40}$/.test(sha)) throw new HTTPException(400, { message: 'bad sha' })
   try {
@@ -302,7 +308,7 @@ api.get('/projects/:id/uploads/:name', async (c) => {
 })
 
 api.post('/projects/:id/preview-logs', async (c) => {
-  await owned(c)
+  await owned(c, 'view')
   const entries = await body<{ level?: string; message?: string }[]>(c)
   for (const e of (Array.isArray(entries) ? entries : []).slice(0, 100)) {
     if (typeof e?.message === 'string') sandbox.pushLog(c.req.param('id'), { source: 'browser', level: String(e.level ?? 'log'), message: e.message.slice(0, 4000) })
@@ -352,7 +358,7 @@ const backendOf = async (c: Parameters<typeof owned>[0]) => {
 }
 
 api.get('/projects/:id/backend', async (c) => {
-  const row = await owned(c)
+  const row = await owned(c, 'edit')
   if (!(await backend.isEnabled(row.id))) return c.json({ enabled: false })
   await backend.ensure(row.id)
   const tables = await backend.schema(row.id)

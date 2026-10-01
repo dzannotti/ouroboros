@@ -1,6 +1,6 @@
 import type { Message, SelectedElement } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ChevronDown, Code2, Copy, Eye, Loader2, Database, Download, ExternalLink, History, Monitor, MousePointerClick, PanelLeftClose, PanelLeftOpen, RefreshCw, Settings2, Smartphone, Tablet, Trash2, X } from 'lucide-react'
+import { ArrowDown, ChevronDown, Code2, Copy, Eye, Loader2, Database, Download, ExternalLink, History, Monitor, MousePointerClick, PanelLeftClose, PanelLeftOpen, RefreshCw, Settings2, Share2, Smartphone, Tablet, Trash2, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
@@ -12,6 +12,7 @@ import { type Device, type PreviewHandle, PreviewPanel } from '@/components/prev
 import { CloudView } from '@/components/project/cloud-view'
 import { CodeView } from '@/components/project/code-view'
 import { SettingsDialog } from '@/components/project/settings-dialog'
+import { ShareDialog } from '@/components/project/share-dialog'
 import { DiffDialog, VersionsPanel } from '@/components/project/versions-panel'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
@@ -38,6 +39,17 @@ export default function ProjectPage() {
   const { data: messages } = useQuery({ queryKey: ['messages', id], queryFn: () => api.messages(id) })
   const { data: versions } = useQuery({ queryKey: ['versions', id], queryFn: () => api.versions(id) })
   const sandbox = useSandbox(id, project?.sandbox)
+  const isOwner = project?.access === 'owner'
+  const canEdit = project?.access !== 'view'
+  const remixProject = () =>
+    void api
+      .remix(id)
+      .then((p) => {
+        void qc.invalidateQueries({ queryKey: ['projects'] })
+        toast.success(`Created ${p.name}`)
+        navigate(`/projects/${p.id}`)
+      })
+      .catch((err: Error) => toast.error(err.message))
 
   const [view, setView] = useState<View>('preview')
   const [device, setDevice] = useState<Device>('desktop')
@@ -52,6 +64,7 @@ export default function ProjectPage() {
   const [routeInput, setRouteInput] = useState('/')
   const [text, setText] = useState('')
   const [settings, setSettings] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [diff, setDiff] = useState<{ sha: string; title: string } | null>(null)
   const [queue, setQueue] = useState<Draft[]>([])
@@ -247,20 +260,18 @@ export default function ProjectPage() {
               <LogoMark className="size-4" /> All projects
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => setSettings(true)}>
-              <Settings2 /> Settings & knowledge
-            </DropdownMenuItem>
+            {isOwner && (
+              <>
+                <DropdownMenuItem onSelect={() => setSettings(true)}>
+                  <Settings2 /> Settings & knowledge
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setSharing(true)}>
+                  <Share2 /> Share
+                </DropdownMenuItem>
+              </>
+            )}
             <DropdownMenuItem
-              onSelect={() =>
-                void api
-                  .remix(id)
-                  .then((p) => {
-                    void qc.invalidateQueries({ queryKey: ['projects'] })
-                    toast.success(`Created ${p.name}`)
-                    navigate(`/projects/${p.id}`)
-                  })
-                  .catch((err: Error) => toast.error(err.message))
-              }
+              onSelect={remixProject}
             >
               <Copy /> Remix project
             </DropdownMenuItem>
@@ -269,13 +280,22 @@ export default function ProjectPage() {
                 <Download /> Download code
               </a>
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
-              <Trash2 /> Delete project
-            </DropdownMenuItem>
+            {isOwner && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
+                  <Trash2 /> Delete project
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="ml-auto flex items-center gap-0.5">
+          {isOwner && (
+            <IconButton label="Share" onClick={() => setSharing(true)}>
+              <Share2 />
+            </IconButton>
+          )}
           <IconButton label={panel === 'history' ? 'Back to chat' : 'Version history'} active={panel === 'history'} onClick={() => setPanel((p) => (p === 'history' ? 'chat' : 'history'))}>
             <History />
           </IconButton>
@@ -303,7 +323,7 @@ export default function ProjectPage() {
                 ))}
               </div>
             )}
-            {!running && suggestions.length > 0 && !text && (
+            {canEdit && !running && suggestions.length > 0 && !text && (
               <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none]" aria-label="Suggestions">
                 {suggestions.map((sg) => (
                   <Button key={sg} variant="outline" size="sm" className="h-7 shrink-0 rounded-full text-xs font-normal text-muted-foreground" onClick={() => setText(sg)}>
@@ -312,22 +332,33 @@ export default function ProjectPage() {
                 ))}
               </div>
             )}
-            <Composer
-              model={model}
-              onModelChange={setModel}
-              onSubmit={send}
-              running={running}
-              onStop={() => void api.stop(id)}
-              elements={elements}
-              onRemoveElement={(oid) => setElements((prev) => prev.filter((e) => e.oid !== oid))}
-              selecting={selecting}
-              onToggleSelect={() => {
-                setSelecting((s) => !s)
-                setMobileTab('preview')
-              }}
-              text={text}
-              onTextChange={setText}
-            />
+            {canEdit ? (
+              <Composer
+                model={model}
+                onModelChange={setModel}
+                onSubmit={send}
+                running={running}
+                onStop={() => void api.stop(id)}
+                elements={elements}
+                onRemoveElement={(oid) => setElements((prev) => prev.filter((e) => e.oid !== oid))}
+                selecting={selecting}
+                onToggleSelect={() => {
+                  setSelecting((s) => !s)
+                  setMobileTab('preview')
+                }}
+                text={text}
+                onTextChange={setText}
+              />
+            ) : (
+              <div className="flex items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2.5 text-sm text-muted-foreground">
+                <span>
+                  View only{project?.ownerName ? ` · shared by ${project.ownerName}` : ''}
+                </span>
+                <Button size="sm" variant="outline" onClick={remixProject}>
+                  <Copy /> Remix to edit
+                </Button>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -348,16 +379,18 @@ export default function ProjectPage() {
         <IconButton label="Open in new tab" onClick={() => window.open(src, '_blank', 'noopener')}>
           <ExternalLink />
         </IconButton>
-        <IconButton
-          label={selecting ? 'Stop selecting' : 'Select an element to edit'}
-          active={selecting}
-          onClick={() => {
-            setView('preview')
-            setSelecting((s) => !s)
-          }}
-        >
-          <MousePointerClick />
-        </IconButton>
+        {canEdit && (
+          <IconButton
+            label={selecting ? 'Stop selecting' : 'Select an element to edit'}
+            active={selecting}
+            onClick={() => {
+              setView('preview')
+              setSelecting((s) => !s)
+            }}
+          >
+            <MousePointerClick />
+          </IconButton>
+        )}
         <form
           className="mx-auto flex h-8 w-full max-w-md items-center gap-2 rounded-lg border bg-muted/50 px-2"
           onSubmit={(e) => {
@@ -392,9 +425,11 @@ export default function ProjectPage() {
           <ToggleGroupItem value="code" className="gap-1 px-2.5 text-xs">
             <Code2 className="size-3.5" /> Code
           </ToggleGroupItem>
-          <ToggleGroupItem value="cloud" className="gap-1 px-2.5 text-xs">
-            <Database className="size-3.5" /> Cloud
-          </ToggleGroupItem>
+          {canEdit && (
+            <ToggleGroupItem value="cloud" className="gap-1 px-2.5 text-xs">
+              <Database className="size-3.5" /> Cloud
+            </ToggleGroupItem>
+          )}
         </ToggleGroup>
         <IconButton label="Download code" onClick={() => (location.href = api.downloadUrl(id))}>
           <Download />
@@ -545,6 +580,7 @@ export default function ProjectPage() {
       )}
       <DiffDialog projectId={id} version={diff ? { sha: diff.sha, title: diff.title, createdAt: '', good: false, current: false } : null} onClose={() => setDiff(null)} />
       {project && <SettingsDialog project={project} open={settings} onOpenChange={setSettings} />}
+      {project && isOwner && <ShareDialog project={project} open={sharing} onOpenChange={setSharing} />}
       <AlertDialog open={deleting} onOpenChange={setDeleting}>
         <AlertDialogContent>
           <AlertDialogHeader>
