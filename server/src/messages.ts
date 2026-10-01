@@ -63,6 +63,11 @@ export async function get(id: string): Promise<Row | undefined> {
   return row
 }
 
+export async function authorEmail(id: string): Promise<string | null> {
+  const [row] = await sql<{ email: string | null }[]>`select u.email from messages m join users u on u.id = m.author_id where m.id = ${id}`
+  return row?.email ?? null
+}
+
 export async function markInterrupted() {
   await sql`update messages set status = 'stopped' where status = 'streaming'`
 }

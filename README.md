@@ -42,6 +42,8 @@ For development, run `npm run dev:server` and `npm run dev:web` (Vite on :5173, 
 
 Locally Ouroboros starts its own Postgres container. To inspect another instance's database from a dev machine, set `DATABASE_URL` and `DB_READONLY=1`; every write then fails instead of changing that database.
 
+**Per-user usage.** Set `AI_USER_HEADER` to have every model call carry the email of the person who sent the prompt in that request header (for example `X-OpenWebUI-User-Email`, which LiteLLM reads as the end user). On shared projects that is whoever prompted, not the owner. Automatic follow-up work in the same turn counts towards the same person. Nothing is sent when the variable is unset or the user has no email.
+
 ## Deploying with Docker
 
 `Dockerfile` builds Ouroboros with the docker CLI, Chromium and git. `deploy/compose.example.yaml` runs it on a Docker host:

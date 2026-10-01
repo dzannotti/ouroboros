@@ -13,7 +13,7 @@ import * as sandbox from '../sandbox.ts'
 import { estimateTokens, fitContext } from './compact.ts'
 import { projectContext } from './context.ts'
 import { missingDependencies } from './fixers.ts'
-import { complete, llm } from './llm.ts'
+import { asUser, complete, llm, userHeaders } from './llm.ts'
 import { pendingLabel, progressLabel } from './progress.ts'
 import { systemPrompt } from './prompt.ts'
 import { type ToolContext, runTool, toolSchemas, typecheck } from './tools.ts'
@@ -140,7 +140,8 @@ export async function startRun(opts: { projectId: string; userMessageId: string;
   publish(opts.projectId, { type: 'message', message: messages.toMessage(assistant) })
   const abort = new AbortController()
   running.set(opts.projectId, { abort, messageId: assistant.id })
-  void execute({ ...opts, assistantId: assistant.id, abort }).finally(() => running.delete(opts.projectId))
+  const email = await messages.authorEmail(opts.userMessageId)
+  void asUser(email, () => execute({ ...opts, assistantId: assistant.id, abort })).finally(() => running.delete(opts.projectId))
   return assistant
 }
 
@@ -285,7 +286,7 @@ async function callModel(opts: {
   let usage: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } | null } | undefined
   const completion = await llm.chat.completions.create(
     { model: opts.model, messages: opts.messages, tools: opts.tools, stream: true, stream_options: { include_usage: true }, max_tokens: 32_000, parallel_tool_calls: true, ...(config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {}) },
-    { signal: opts.signal },
+    { signal: opts.signal, headers: userHeaders() },
   )
   let text = ''
   let textIndex = -1

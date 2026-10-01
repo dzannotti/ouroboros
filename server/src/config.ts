@@ -35,6 +35,7 @@ export const config = {
     maxSteps: Number(process.env.AI_MAX_STEPS ?? 300),
     contextBudget: Number(process.env.AI_CONTEXT_BUDGET ?? 170_000),
     embeddingModel: process.env.AI_EMBEDDING_MODEL ?? '',
+    userHeader: process.env.AI_USER_HEADER?.trim() || undefined,
     reasoningEffort: (['low', 'medium', 'high'] as const).find((e) => e === process.env.AI_REASONING_EFFORT),
   },
   comfy: {
