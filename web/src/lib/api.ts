@@ -31,7 +31,7 @@ const json = (body: unknown) => JSON.stringify(body)
 
 export type ProjectDetail = Project & { sandbox: { status: SandboxStatus; error?: string }; running: string | null }
 export type AppConfig = { models: ModelInfo[]; previewPort: number; previewUrl: string | null }
-export type User = { id: string; name: string; email: string | null; role: 'admin' | 'user'; authMode: 'oidc' | 'header' | 'dev' }
+export type User = { id: string; name: string; email: string | null; role: 'admin' | 'user'; picture: string | null; authMode: 'oidc' | 'header' | 'dev' }
 export type TableInfo = { name: string; rls: boolean; rows: number; columns: { name: string; type: string; nullable: boolean; default: string | null }[]; policies: { name: string; command: string; roles: string[]; using: string | null; check: string | null }[] }
 export type BackendInfo = { enabled: false } | { enabled: true; status: { status: string; error?: string }; tables: TableInfo[]; findings: { level: 'error' | 'warn' | 'info'; table: string; message: string }[]; secrets: { name: string; createdAt: string }[] }
 export type SendInput = { text: string; images?: { url: string; name: string }[]; elements?: SelectedElement[]; mode?: 'build' | 'plan'; model?: string }
