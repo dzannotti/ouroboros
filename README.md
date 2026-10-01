@@ -61,7 +61,7 @@ Ouroboros chooses its auth mode from the environment (`AUTH_MODE` overrides it):
 | `oidc` | `OIDC_ISSUER` is set | native OpenID Connect (authorization code + PKCE), server-side sessions in Postgres, RP-initiated logout |
 | `header` | `TRUSTED_PROXIES` is set | trusts forward-auth headers (`X-authentik-*`, `Remote-User`), but only from those proxy IPs |
 
-**Roles.** A user is `admin` (sees and opens everyone's projects), `user`, or has no access. The role comes from the `ouroboros_role` claim (`OIDC_ROLE_CLAIM`). If that claim is missing, Ouroboros falls back to the `groups` claim (`OIDC_ADMIN_GROUP` / `OIDC_USER_GROUP`), and otherwise to `OIDC_DEFAULT_ROLE` (`none`). Users are identified by email. Someone without access gets a "No access" page, and no account is created.
+**Roles.** A user is `admin` (sees and opens everyone's projects), `user`, or has no access. The role comes from the `ouroboros_role` claim (`OIDC_ROLE_CLAIM`). If that claim is missing, Ouroboros falls back to the `groups` claim (`OIDC_ADMIN_GROUP` / `OIDC_USER_GROUP`), and otherwise to `OIDC_DEFAULT_ROLE` (`none`). Users are identified by email. The avatar comes from the `picture` claim, when the provider sends one. Someone without access gets a "No access" page, and no account is created.
 
 ### Example: Authentik
 

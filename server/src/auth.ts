@@ -9,7 +9,7 @@ import { config } from './config.ts'
 import { sql } from './db.ts'
 
 export type Role = 'admin' | 'user'
-export type User = { id: string; subject: string; name: string; email: string | null; role: Role }
+export type User = { id: string; subject: string; name: string; email: string | null; role: Role; picture: string | null }
 
 const SESSION_COOKIE = 'ob_session'
 const FLOW_COOKIE = 'ob_oidc'
@@ -43,11 +43,11 @@ export function roleFromClaims(claims: Record<string, unknown>, opts: RoleOption
   return opts.defaultRole === 'none' ? null : opts.defaultRole
 }
 
-async function upsertUser(who: { subject: string; name: string; email: string | null; role: Role }): Promise<User> {
+async function upsertUser(who: { subject: string; name: string; email: string | null; role: Role; picture?: string | null }): Promise<User> {
   const [user] = await sql<User[]>`
-    insert into users (subject, name, email, role) values (${who.subject}, ${who.name}, ${who.email}, ${who.role})
-    on conflict (subject) do update set name = excluded.name, email = excluded.email, role = excluded.role
-    returning id, subject, name, email, role`
+    insert into users (subject, name, email, role, picture) values (${who.subject}, ${who.name}, ${who.email}, ${who.role}, ${who.picture ?? null})
+    on conflict (subject) do update set name = excluded.name, email = excluded.email, role = excluded.role, picture = excluded.picture
+    returning id, subject, name, email, role, picture`
   return user
 }
 
@@ -67,7 +67,7 @@ async function sessionUser(c: Context): Promise<User | null> {
   const id = unsign(getCookie(c, SESSION_COOKIE))
   if (!id) return null
   const [user] = await sql<User[]>`
-    select u.id, u.subject, u.name, u.email, u.role from sessions s join users u on u.id = s.user_id
+    select u.id, u.subject, u.name, u.email, u.role, u.picture from sessions s join users u on u.id = s.user_id
     where s.id = ${id} and s.expires_at > now()`
   return user ?? null
 }
@@ -154,7 +154,8 @@ authRoutes.get('/callback', async (c) => {
   }
   const email = typeof claims.email === 'string' ? claims.email : null
   const name = String(claims.name ?? claims.preferred_username ?? email ?? sub)
-  const user = await upsertUser({ subject: `oidc:${email ?? sub}`, name, email, role })
+  const picture = typeof claims.picture === 'string' && /^(https:|data:image\/)/.test(claims.picture) ? claims.picture : null
+  const user = await upsertUser({ subject: `oidc:${email ?? sub}`, name, email, role, picture })
   const id = randomBytes(24).toString('base64url')
   const hours = config.auth.sessionHours
   await sql`insert into sessions (id, user_id, id_token, expires_at) values (${id}, ${user.id}, ${tokens.id_token ?? null}, now() + ${`${hours} hours`}::interval)`
