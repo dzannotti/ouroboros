@@ -37,7 +37,7 @@ import {
   Undo2,
   X,
 } from 'lucide-react'
-import { type ReactNode, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -128,12 +128,23 @@ function blocks(parts: Part[]): Block[] {
   return out
 }
 
+function useElapsed(since: string, active: boolean) {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    if (!active) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [active])
+  return Math.max(0, now - new Date(since).getTime())
+}
+
 export function AssistantMessage({ message, actions, isLast, mode }: { message: Message; actions: MessageActions; isLast: boolean; mode?: 'build' | 'plan' }) {
   const streaming = message.status === 'streaming'
   const list = blocks(message.parts)
   const text = message.parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n\n')
   const lastPart = message.parts.at(-1)
-  const waiting = streaming && (!lastPart || lastPart.type === 'version' || (lastPart.type === 'check' && lastPart.status !== 'running') || (lastPart.type === 'tool' && lastPart.status !== 'running'))
+  const busy = lastPart && ((lastPart.type === 'tool' && lastPart.status === 'running') || (lastPart.type === 'check' && lastPart.status === 'running') || (lastPart.type === 'reasoning' && lastPart.durationMs === undefined))
+  const elapsed = useElapsed(message.createdAt, streaming)
   const version = message.parts.find((p): p is VersionPart => p.type === 'version')
   const tools = message.parts.filter((p): p is ToolPart => p.type === 'tool')
   const changed = new Set(tools.filter((t) => ['write_file', 'edit_file', 'delete_file', 'generate_image'].includes(t.name) && t.status === 'done').map((t) => t.args.path))
@@ -148,10 +159,11 @@ export function AssistantMessage({ message, actions, isLast, mode }: { message: 
           <PartView key={block.index} part={block.part} actions={actions} isLast={isLast} />
         ),
       )}
-      {waiting && (
-        <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
+      {streaming && (
+        <div className="flex items-center gap-2 text-[13px] text-muted-foreground" role="status">
           <Loader2 className="size-3.5 animate-spin" />
-          <span className="shimmer">Working…</span>
+          {!busy && <span className="shimmer">Working…</span>}
+          <span className="tabular-nums">{duration(elapsed)}</span>
         </div>
       )}
       {isPlan && /##\s*Plan/i.test(text) && isLast && !streaming && actions.onImplementPlan && (

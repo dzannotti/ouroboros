@@ -14,6 +14,7 @@ import { estimateTokens, fitContext } from './compact.ts'
 import { projectContext } from './context.ts'
 import { missingDependencies } from './fixers.ts'
 import { complete, llm } from './llm.ts'
+import { pendingLabel, progressLabel } from './progress.ts'
 import { systemPrompt } from './prompt.ts'
 import { type ToolContext, runTool, toolSchemas, typecheck } from './tools.ts'
 
@@ -283,14 +284,14 @@ async function callModel(opts: {
   let firstToken = 0
   let usage: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } | null } | undefined
   const completion = await llm.chat.completions.create(
-    { model: opts.model, messages: opts.messages, tools: opts.tools, stream: true, stream_options: { include_usage: true }, max_tokens: 32_000, parallel_tool_calls: true },
+    { model: opts.model, messages: opts.messages, tools: opts.tools, stream: true, stream_options: { include_usage: true }, max_tokens: 32_000, parallel_tool_calls: true, ...(config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {}) },
     { signal: opts.signal },
   )
   let text = ''
   let textIndex = -1
   let reasoningIndex = -1
   let reasoningStart = 0
-  const calls = new Map<number, { id: string; name: string; args: string }>()
+  const calls = new Map<number, { id: string; name: string; args: string; shownAt: number }>()
   const toolParts = new Map<string, number>()
 
   const endReasoning = () => {
@@ -323,11 +324,22 @@ async function callModel(opts: {
     }
     for (const tc of delta.tool_calls ?? []) {
       endReasoning()
-      const entry = calls.get(tc.index) ?? { id: '', name: '', args: '' }
-      if (tc.id) entry.id = tc.id
+      const entry = calls.get(tc.index) ?? { id: '', name: '', args: '', shownAt: 0 }
+      if (tc.id && !entry.id) entry.id = tc.id
       if (tc.function?.name) entry.name += tc.function.name
       if (tc.function?.arguments) entry.args += tc.function.arguments
       calls.set(tc.index, entry)
+      if (!entry.name) continue
+      entry.id ||= `call_${Date.now()}_${tc.index}`
+      const label = progressLabel(entry.name, entry.args)
+      const index = toolParts.get(entry.id)
+      if (index === undefined) {
+        toolParts.set(entry.id, stream.add({ type: 'tool', id: entry.id, name: entry.name, label, status: 'running', args: {} }))
+      } else if (Date.now() - entry.shownAt > 400) {
+        const part = stream.parts[index]
+        if (part.type === 'tool' && part.label !== label) stream.set(index, { ...part, name: entry.name, label })
+      } else continue
+      entry.shownAt = Date.now()
     }
   }
   endReasoning()
@@ -340,29 +352,12 @@ async function callModel(opts: {
     .map(([i, c]) => ({ id: c.id || `call_${Date.now()}_${i}`, type: 'function', function: { name: c.name, arguments: c.args || '{}' } }))
 
   for (const call of toolCalls) {
-    toolParts.set(call.id, stream.add({ type: 'tool', id: call.id, name: call.function.name, label: pendingLabel(call.function.name), status: 'running', args: {} }))
+    if (!toolParts.has(call.id)) toolParts.set(call.id, stream.add({ type: 'tool', id: call.id, name: call.function.name, label: pendingLabel(call.function.name), status: 'running', args: {} }))
   }
 
   const message: ChatCompletionMessageParam = toolCalls.length ? { role: 'assistant', content: text || null, tool_calls: toolCalls } : { role: 'assistant', content: text }
   return { message, toolCalls, toolParts }
 }
-
-const pendingLabel = (name: string) =>
-  ({
-    read_file: 'Reading file',
-    write_file: 'Writing file',
-    edit_file: 'Editing file',
-    add_dependency: 'Installing packages',
-    check_project: 'Checking for errors',
-    generate_design_brief: 'Designing',
-    generate_image: 'Generating image',
-    fetch_url: 'Fetching page',
-    run_command: 'Running command',
-    screenshot: 'Looking at the app',
-    enable_backend: 'Setting up backend',
-    run_migration: 'Waiting for approval',
-    request_secrets: 'Waiting for secrets',
-  })[name] ?? name.replace(/_/g, ' ')
 
 async function postTurnChecks(projectId: string, ctx: ToolContext, stream: Stream, signal: AbortSignal): Promise<{ ok: boolean; report: string }> {
   const dir = projectDir(projectId)
