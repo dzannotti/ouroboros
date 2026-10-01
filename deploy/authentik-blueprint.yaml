@@ -1,0 +1,49 @@
+# Optional: the Authentik objects for Ouroboros as a blueprint (the README lists the same steps for the UI).
+# Replace the redirect URL host before applying.
+version: 1
+metadata: {name: ouroboros}
+entries:
+  - model: authentik_core.group
+    id: g-user
+    identifiers: {name: svc-ouroboros-user}
+    attrs: {is_superuser: false}
+  - model: authentik_core.group
+    id: g-admin
+    identifiers: {name: svc-ouroboros-admin}
+    attrs: {is_superuser: false, parents: [!KeyOf g-user]}
+  - model: authentik_providers_oauth2.scopemapping
+    id: scope-role
+    identifiers: {scope_name: ouroboros_role}
+    attrs:
+      name: "Ouroboros role"
+      expression: |
+        if ak_is_group_member(request.user, name="svc-ouroboros-admin"):
+            return {"ouroboros_role": "admin"}
+        if ak_is_group_member(request.user, name="svc-ouroboros-user"):
+            return {"ouroboros_role": "user"}
+        return {"ouroboros_role": "none"}
+  - model: authentik_providers_oauth2.oauth2provider
+    id: provider
+    identifiers: {name: ouroboros-oidc}
+    attrs:
+      client_type: confidential
+      grant_types: [authorization_code, refresh_token]
+      property_mappings:
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, openid]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, profile]]
+        - !Find [authentik_providers_oauth2.scopemapping, [scope_name, email]]
+        - !KeyOf scope-role
+      redirect_uris:
+        - {matching_mode: strict, url: https://ouroboros.example.com/auth/callback}
+      sub_mode: user_email
+      include_claims_in_id_token: true
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+  - model: authentik_core.application
+    id: app
+    identifiers: {slug: ouroboros}
+    attrs: {name: Ouroboros, provider: !KeyOf provider, meta_launch_url: https://ouroboros.example.com}
+  - model: authentik_policies.policybinding
+    identifiers: {target: !KeyOf app, group: !KeyOf g-user, order: 0}
+    attrs: {enabled: true}

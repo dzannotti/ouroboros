@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - react-day-picker@10.0.2

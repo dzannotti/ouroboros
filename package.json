@@ -1,0 +1,19 @@
+{
+  "name": "ouroboros",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run build -w web",
+    "build:sandbox": "${CONTAINER_CLI:-podman} build -t localhost/ouroboros-sandbox:latest -f sandbox/Containerfile .",
+    "start": "NODE_ENV=production npm start -w server",
+    "dev:server": "npm run dev -w server",
+    "dev:web": "npm run dev -w web",
+    "test": "npm test -w server",
+    "typecheck": "npm run typecheck -w server && npx -w web tsc -b"
+  },
+  "license": "MIT"
+}

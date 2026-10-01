@@ -1,0 +1,33 @@
+# Example: Ouroboros on a Docker host. Copy next to a .env (see .env.example), then:
+#   docker compose -f compose.example.yaml up -d --build
+name: ouroboros
+
+services:
+  ouroboros:
+    build: ..
+    image: ouroboros:latest
+    container_name: ouroboros
+    hostname: ouroboros
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CONTAINER_NETWORK: ouroboros
+      OUROBOROS_HOSTNAME: ouroboros
+      DATA_DIR: /data
+      HOST_DATA_DIR: ${OUROBOROS_DATA:-/srv/ouroboros/data}
+    ports:
+      - "8787:8787"
+      - "8788:8788"
+    volumes:
+      # Same path as HOST_DATA_DIR: Ouroboros bind-mounts project folders into sibling containers.
+      - ${OUROBOROS_DATA:-/srv/ouroboros/data}:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    security_opt:
+      - label:disable
+    networks: [ouroboros]
+    labels:
+      deunhealth.restart.on.unhealthy: "true"
+
+networks:
+  ouroboros:
+    name: ouroboros
