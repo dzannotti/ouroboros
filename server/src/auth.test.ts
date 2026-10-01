@@ -10,12 +10,12 @@ test('roleFromClaims prefers the custom role claim', () => {
 })
 
 test('roleFromClaims falls back to groups (array or pipe-separated header)', () => {
-  assert.equal(roleFromClaims({ groups: ['family-user', 'svc-ouroboros-user'] }, opts), 'user')
-  assert.equal(roleFromClaims({ groups: 'svc-ouroboros-admin|family-admin' }, opts), 'admin')
+  assert.equal(roleFromClaims({ groups: ['staff', 'svc-ouroboros-user'] }, opts), 'user')
+  assert.equal(roleFromClaims({ groups: 'svc-ouroboros-admin|staff-admin' }, opts), 'admin')
 })
 
 test('roleFromClaims denies by default and honours defaultRole', () => {
-  assert.equal(roleFromClaims({ groups: ['family-user'] }, opts), null)
+  assert.equal(roleFromClaims({ groups: ['staff'] }, opts), null)
   assert.equal(roleFromClaims({}, { ...opts, defaultRole: 'user' }), 'user')
 })
 

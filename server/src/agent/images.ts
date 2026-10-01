@@ -44,5 +44,5 @@ export async function generateImage(prompt: string, width: number, height: numbe
       return Buffer.from(await view.arrayBuffer())
     }
   }
-  throw new Error('Image generation timed out')
+  throw new Error('Image generation timed out: the image service is busy. Do not retry this turn; use the stock photo fallback instead.')
 }

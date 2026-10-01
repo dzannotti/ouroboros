@@ -3,3 +3,8 @@ dist
 .env
 data/
 *.tsbuildinfo
+
+# Local planning and research notes
+PLAN.md
+reports/
+research_notes/

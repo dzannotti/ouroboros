@@ -16,7 +16,7 @@ import { missingDependencies } from './fixers.ts'
 import { asUser, complete, llm, userHeaders } from './llm.ts'
 import { pendingLabel, progressLabel } from './progress.ts'
 import { systemPrompt } from './prompt.ts'
-import { type ToolContext, runTool, toolSchemas, typecheck } from './tools.ts'
+import { type ToolContext, lint, runTool, toolSchemas, typecheck } from './tools.ts'
 
 const MAX_FIX_ROUNDS = 2
 const FULL_HISTORY_TURNS = 2
@@ -374,6 +374,8 @@ async function postTurnChecks(projectId: string, ctx: ToolContext, stream: Strea
 
   const tsc = await typecheck(projectId, signal)
   if (!tsc.ok) problems.push(`TypeScript errors:\n${tsc.output.slice(0, 6000)}`)
+  const linted = await lint(projectId, ctx.changed, signal)
+  if (!linted.ok) problems.push(`Lint errors (real bugs, fix them):\n${linted.output.slice(0, 3000)}`)
 
   if (tsc.ok && browser.available()) {
     try {

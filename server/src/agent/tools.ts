@@ -359,13 +359,15 @@ export const tools: Tool[] = [
   },
   {
     name: 'check_project',
-    description: 'Type-check the project (tsc). Call after making changes and fix every reported error.',
+    description: 'Type-check the project (tsc) and lint the files you changed for real bugs. Call after making changes and fix every reported error.',
     readOnly: true,
     parameters: { type: 'object', properties: {} },
     label: () => 'Checked for errors',
     async run(_args, ctx) {
       const res = await typecheck(ctx.projectId, ctx.signal)
-      return res.ok ? { output: 'No type errors.', summary: 'passed' } : { output: truncate(res.output), error: true, summary: 'errors found' }
+      if (!res.ok) return { output: truncate(res.output), error: true, summary: 'errors found' }
+      const linted = await lint(ctx.projectId, ctx.changed, ctx.signal)
+      return linted.ok ? { output: 'No type or lint errors.', summary: 'passed' } : { output: truncate(`Lint errors:\n${linted.output}`), error: true, summary: 'errors found' }
     },
   },
   {
@@ -661,6 +663,16 @@ export async function typecheck(projectId: string, signal?: AbortSignal): Promis
   const res = await sandbox.execIn(projectId, 'pnpm exec tsc -b --pretty false 2>&1', { timeoutMs: 180_000, signal })
   const output = (res.stdout + res.stderr).trim()
   return { ok: res.code === 0, output: output || `tsc exited with ${res.code}` }
+}
+
+const LINT_RULES = ['react/rules-of-hooks', 'react/jsx-key', 'react/jsx-no-duplicate-props']
+
+/** Lints the files changed this turn for real bugs only (warnings are ignored), so the model is not sent on style chores. */
+export async function lint(projectId: string, files: Iterable<string>, signal?: AbortSignal): Promise<{ ok: boolean; output: string }> {
+  const targets = [...files].filter((f) => /^src\/[\w./@-]+\.tsx?$/.test(f) && !f.startsWith('src/components/ui/') && existsSync(path.join(projectDir(projectId), f)))
+  if (!targets.length) return { ok: true, output: '' }
+  const res = await sandbox.execIn(projectId, `pnpm exec oxlint --quiet --format unix ${LINT_RULES.map((r) => `-D ${r}`).join(' ')} ${targets.join(' ')} 2>&1`, { timeoutMs: 60_000, signal })
+  return { ok: res.code === 0, output: (res.stdout + res.stderr).trim() }
 }
 
 export function toolsFor(mode: ChatMode) {

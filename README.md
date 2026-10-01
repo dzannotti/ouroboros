@@ -2,11 +2,15 @@
 
 A self-hosted AI app builder in the spirit of Lovable and v0. You describe an app in chat, an agent builds it, and a live preview runs next to the chat. It runs on your own hardware against any OpenAI-compatible model endpoint.
 
+![The Ouroboros home page: a prompt box and your projects](docs/home.png)
+
+![A project: chat on the left, live preview on the right](docs/project.png)
+
 - **Chat + live preview**: v0-style transcript (thinking, step rows, version cards, plans, clarifying questions), queued prompts, stop/retry/undo.
 - **Visual edits**: select elements in the preview, then edit labels and styles directly (written back to the JSX) or ask the AI about that element.
 - **Versions**: every turn is a version; restore never rewrites history; preview any old version; download any project as a standalone Vite app.
 - **Backend ("Cloud")**: per-project Supabase-compatible stack (Postgres, auth, PostgREST, storage, Bun server functions). Migrations need approval in chat, secrets are entered in secure cards, and a security scan checks row-level security.
-- **Self-healing**: type checks, a headless-browser check (runtime errors, broken images, failed requests) and deterministic fixers run after every turn.
+- **Self-healing**: type checks, a lint pass for real bugs, a headless-browser check (runtime errors, broken images, failed requests) and deterministic fixers run after every turn.
 - **Images** (optional): generated with ComfyUI (Z-Image Turbo).
 
 ## Architecture
