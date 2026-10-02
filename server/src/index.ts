@@ -8,7 +8,7 @@ import { HTTPException } from 'hono/http-exception'
 import * as agent from './agent/run.ts'
 import api from './api.ts'
 import { authRoutes, startSessionCleanup } from './auth.ts'
-import { config, loadModels } from './config.ts'
+import { config, loadModels, startModelRefresh } from './config.ts'
 import { connect } from './db.ts'
 import { ensureDatabase } from './infra/postgres.ts'
 import { cli, ensureImage, sharedNetwork } from './infra/runtime.ts'
@@ -20,6 +20,7 @@ import { startReaper } from './sandbox.ts'
 console.log(`[ouroboros] auth mode: ${config.auth.mode}, containers: ${cli}${sharedNetwork ? ` on network ${sharedNetwork}` : ' (published ports)'}`)
 if (!config.ai.apiKey) console.warn('[ouroboros] AI_API_KEY is not set — model calls will likely fail')
 await loadModels()
+startModelRefresh()
 
 await connect(await ensureDatabase(), config.databaseReadOnly)
 if (config.databaseReadOnly) console.warn('[ouroboros] DB_READONLY: database is read-only (debugging) — writes will fail')

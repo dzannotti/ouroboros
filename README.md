@@ -46,6 +46,15 @@ For development, run `npm run dev:server` and `npm run dev:web` (Vite on :5173, 
 
 Locally Ouroboros starts its own Postgres container. To inspect another instance's database from a dev machine, set `DATABASE_URL` and `DB_READONLY=1`; every write then fails instead of changing that database.
 
+**Models.** With `AI_MODELS` unset, the picker lists the endpoint's chat models and re-reads them every five minutes, so adding or retiring a model needs no change in Ouroboros; projects that used a retired model move to the default. On LiteLLM you can name them for people by adding this to a model in its config:
+
+```yaml
+model_info:
+  ouroboros: { label: "Fast", description: "Quick edits", default: true }   # hidden: true hides a model
+```
+
+Without that, the model id is shown. `AI_MODELS` pins the list instead, and `AI_DEFAULT_MODEL` overrides the default.
+
 **Per-user usage.** Set `AI_USER_HEADER` to have every model call carry the email of the person who sent the prompt in that request header (for example `X-OpenWebUI-User-Email`, which LiteLLM reads as the end user). On shared projects that is whoever prompted, not the owner. Automatic follow-up work in the same turn counts towards the same person. Nothing is sent when the variable is unset or the user has no email.
 
 ## Deploying with Docker

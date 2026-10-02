@@ -4,7 +4,7 @@ const root = path.resolve(import.meta.dirname, '../..')
 
 export type ModelInfo = { id: string; label: string; description: string }
 
-/** AI_MODELS="model-id:Label:Short description,other-id:Other" — otherwise discovered from the endpoint at startup. */
+/** AI_MODELS="model-id:Label:Short description,other-id:Other" — otherwise discovered from the endpoint (see discoverModels). */
 export const models: ModelInfo[] = (process.env.AI_MODELS ?? '')
   .split(',')
   .map((entry) => entry.trim())
@@ -30,8 +30,8 @@ export const config = {
     baseUrl: (process.env.AI_BASE_URL ?? 'http://localhost:4000/v1').replace(/\/$/, ''),
     apiKey: process.env.AI_API_KEY ?? '',
     get defaultModel(): string {
-      const wanted = process.env.AI_DEFAULT_MODEL
-      return models.some((m) => m.id === wanted) ? wanted! : (models[0]?.id ?? wanted ?? '')
+      const wanted = [process.env.AI_DEFAULT_MODEL, discoveredDefault].find((id) => models.some((m) => m.id === id))
+      return wanted ?? models[0]?.id ?? process.env.AI_DEFAULT_MODEL ?? ''
     },
     maxSteps: Number(process.env.AI_MAX_STEPS ?? 300),
     contextBudget: Number(process.env.AI_CONTEXT_BUDGET ?? 170_000),
@@ -68,14 +68,58 @@ export const config = {
 
 export const projectDir = (id: string) => path.join(config.dataDir, 'projects', id)
 
+type Listed = { id: string; mode?: string }
+type Described = { model_name?: string; model_info?: { mode?: string; ouroboros?: { label?: unknown; description?: unknown; default?: unknown; hidden?: unknown } } }
+
+const NOT_CHAT = /embed|rerank|whisper|tts|image|vision-only/i
+const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
+
+/**
+ * Builds the picker list from an OpenAI-style /models listing, enriched by LiteLLM's /model/info when available.
+ * In LiteLLM, add `model_info: { ouroboros: { label, description, default: true, hidden: true } }` to a model to control how it appears.
+ */
+export function discoverModels(listed: Listed[], described: Described[] = []): { models: ModelInfo[]; defaultId?: string } {
+  const info = new Map(described.map((d) => [d.model_name, d.model_info]))
+  const found: ModelInfo[] = []
+  let defaultId: string | undefined
+  for (const m of listed) {
+    const meta = info.get(m.id)
+    const mode = m.mode ?? meta?.mode
+    if (mode ? mode !== 'chat' : NOT_CHAT.test(m.id)) continue
+    const extra = meta?.ouroboros
+    if (extra?.hidden === true || found.some((f) => f.id === m.id)) continue
+    found.push({ id: m.id, label: text(extra?.label) || m.id, description: text(extra?.description) })
+    if (extra?.default === true) defaultId ??= m.id
+  }
+  return { models: found, defaultId }
+}
+
+const fromEnv = models.length > 0
+let discoveredDefault: string | undefined
+
+async function getJson<T>(url: string): Promise<T> {
+  const res = await fetch(url, { headers: { authorization: `Bearer ${config.ai.apiKey}` }, signal: AbortSignal.timeout(10_000) })
+  if (!res.ok) throw new Error(`${res.status} from ${url}`)
+  return (await res.json()) as T
+}
+
+/** Loads the model list from the endpoint unless AI_MODELS pins it. Safe to call again: a failed refresh keeps the previous list. */
 export async function loadModels() {
-  if (models.length) return
+  if (fromEnv) return
   try {
-    const res = await fetch(`${config.ai.baseUrl}/models`, { headers: { authorization: `Bearer ${config.ai.apiKey}` }, signal: AbortSignal.timeout(10_000) })
-    const body = (await res.json()) as { data?: { id: string }[] }
-    for (const m of body.data ?? []) if (!/embed|rerank|whisper|tts|image|vision-only/i.test(m.id)) models.push({ id: m.id, label: m.id, description: '' })
+    const listed = await getJson<{ data?: Listed[] }>(`${config.ai.baseUrl}/models`)
+    const described = await getJson<{ data?: Described[] }>(`${config.ai.baseUrl}/model/info`).catch(() => ({ data: [] }))
+    const found = discoverModels(listed.data ?? [], described.data ?? [])
+    if (found.models.length) {
+      models.splice(0, models.length, ...found.models)
+      discoveredDefault = found.defaultId
+    }
   } catch (err) {
     console.warn(`[ouroboros] could not list models from ${config.ai.baseUrl}:`, (err as Error).message)
   }
   if (!models.length) console.warn('[ouroboros] no models configured — set AI_MODELS')
+}
+
+export function startModelRefresh() {
+  if (!fromEnv) setInterval(() => void loadModels(), 5 * 60_000).unref()
 }
