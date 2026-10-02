@@ -18,10 +18,15 @@ const RANK: Record<Access, number> = { view: 0, edit: 1, owner: 2 }
 const ID_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789'
 const newId = () => Array.from(randomBytes(10), (b) => ID_CHARS[b % ID_CHARS.length]).join('')
 
+export const isModel = (m: unknown): m is string => models.some((x) => x.id === m)
+
+/** A project keeps the model it was last used with; if that model has since been retired, it moves to the default. */
+export const liveModel = (m: string) => (isModel(m) ? m : config.ai.defaultModel)
+
 export const toProject = (r: Row): Project => ({
   id: r.id,
   name: r.name,
-  model: r.model,
+  model: liveModel(r.model),
   lastGoodCommit: r.lastGoodCommit,
   instructions: r.instructions,
   backend: r.backend,
@@ -29,8 +34,6 @@ export const toProject = (r: Row): Project => ({
   updatedAt: r.updatedAt.toISOString(),
   previewUrl: `/p/${r.id}/`,
 })
-
-export const isModel = (m: unknown): m is string => models.some((x) => x.id === m)
 
 export async function create(ownerId: string, name: string, model: string): Promise<Project> {
   const id = newId()

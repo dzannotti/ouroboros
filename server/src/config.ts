@@ -30,7 +30,8 @@ export const config = {
     baseUrl: (process.env.AI_BASE_URL ?? 'http://localhost:4000/v1').replace(/\/$/, ''),
     apiKey: process.env.AI_API_KEY ?? '',
     get defaultModel(): string {
-      return process.env.AI_DEFAULT_MODEL ?? models[0]?.id ?? ''
+      const wanted = process.env.AI_DEFAULT_MODEL
+      return models.some((m) => m.id === wanted) ? wanted! : (models[0]?.id ?? wanted ?? '')
     },
     maxSteps: Number(process.env.AI_MAX_STEPS ?? 300),
     contextBudget: Number(process.env.AI_CONTEXT_BUDGET ?? 170_000),
