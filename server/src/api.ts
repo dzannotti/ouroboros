@@ -27,6 +27,7 @@ type Env = { Variables: { user: User } }
 const api = new Hono<Env>()
 api.use('*', auth)
 
+const RAW_TYPES: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', avif: 'image/avif', ico: 'image/x-icon', svg: 'image/svg+xml' }
 const MAX_UPLOAD = 10 * 1024 * 1024
 const IMAGE_EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' }
 
@@ -189,6 +190,11 @@ api.get('/projects/:id/file', async (c) => {
     return c.text(await git.show(projectDir(c.req.param('id')), sha, file))
   }
   try {
+    const type = c.req.query('raw') ? RAW_TYPES[path.extname(file).slice(1).toLowerCase()] : undefined
+    if (type) {
+      const bytes = await readFile(projects.safePath(c.req.param('id'), file))
+      return c.body(new Uint8Array(bytes), 200, { 'content-type': type, 'x-content-type-options': 'nosniff', 'content-security-policy': "sandbox; default-src 'none'; style-src 'unsafe-inline'", 'cache-control': 'private, no-cache' })
+    }
     return c.text(await projects.readFileText(c.req.param('id'), file))
   } catch (err) {
     if (err instanceof HTTPException) throw err

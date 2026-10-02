@@ -13,6 +13,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
+const IMAGE = /\.(png|jpe?g|webp|gif|avif|ico|svg)$/i
+const BINARY = /\.(woff2?|ttf|otf|eot|pdf|zip|mp4|webm|mp3|wav|ogg)$/i
+
 type Tree = { name: string; path: string; children?: Tree[] }
 
 function buildTree(paths: string[]): Tree[] {
@@ -89,7 +92,15 @@ export function CodeView({ projectId, readOnly }: { projectId: string; readOnly:
         {selected && (
           <>
             <div className="flex h-9 shrink-0 items-center border-b px-3 font-mono text-xs text-muted-foreground">{selected}</div>
-            <CodeFile projectId={projectId} path={selected} readOnly={readOnly} />
+            {IMAGE.test(selected) ? (
+              <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-muted/40 p-6">
+                <img src={api.rawFileUrl(projectId, selected)} alt={selected} className="max-h-full max-w-full rounded-md border bg-background object-contain" />
+              </div>
+            ) : BINARY.test(selected) ? (
+              <p className="p-6 text-sm text-muted-foreground">This file can't be previewed here. Download the project to open it.</p>
+            ) : (
+              <CodeFile projectId={projectId} path={selected} readOnly={readOnly} />
+            )}
           </>
         )}
       </div>

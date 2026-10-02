@@ -52,6 +52,7 @@ export const api = {
   stop: (id: string) => request<void>(`/projects/${id}/stop`, { method: 'POST' }),
   files: (id: string) => request<string[]>(`/projects/${id}/files`),
   file: (id: string, path: string, sha?: string) => request<string>(`/projects/${id}/file?path=${encodeURIComponent(path)}${sha ? `&sha=${sha}` : ''}`),
+  rawFileUrl: (id: string, path: string) => `/api/projects/${id}/file?raw=1&path=${encodeURIComponent(path)}`,
   saveFile: (id: string, path: string, content: string) => request<{ sha: string | null }>(`/projects/${id}/file?path=${encodeURIComponent(path)}`, { method: 'PUT', body: json({ content }) }),
   versions: (id: string) => request<Version[]>(`/projects/${id}/versions`),
   diff: (id: string, sha: string) => request<string>(`/projects/${id}/versions/${sha}/diff`),
