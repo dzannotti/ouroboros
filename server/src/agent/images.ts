@@ -1,4 +1,5 @@
 import { config } from '../config.ts'
+import { billImage } from './llm.ts'
 
 const workflow = (prompt: string, width: number, height: number, seed: number) => ({
   '1': { class_type: 'UNETLoader', inputs: { unet_name: config.comfy.model, weight_dtype: 'default' } },
@@ -41,7 +42,9 @@ export async function generateImage(prompt: string, width: number, height: numbe
     const image = entry?.outputs?.['10']?.images?.[0]
     if (image) {
       const view = await fetch(`${base}/view?${new URLSearchParams(image)}`, { signal })
-      return Buffer.from(await view.arrayBuffer())
+      const png = Buffer.from(await view.arrayBuffer())
+      await billImage(snap(width), snap(height)).catch((err: unknown) => console.warn('[images] billing failed:', (err as Error).message))
+      return png
     }
   }
   throw new Error('Image generation timed out: the image service is busy. Do not retry this turn; use the stock photo fallback instead.')

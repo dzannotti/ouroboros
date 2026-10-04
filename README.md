@@ -56,7 +56,7 @@ model_info:
 
 Without that, the model id is shown. `AI_MODELS` pins the list instead, and `AI_DEFAULT_MODEL` overrides the default.
 
-**Per-user usage.** Set `AI_USER_HEADER` to have every model call carry the email of the person who sent the prompt in that request header (for example `X-OpenWebUI-User-Email`, which LiteLLM reads as the end user). On shared projects that is whoever prompted, not the owner. Automatic follow-up work in the same turn counts towards the same person. Nothing is sent when the variable is unset or the user has no email.
+**Per-user usage.** Set `AI_USER_HEADER` to have every model call carry the email of the person who sent the prompt in that request header (for example `X-OpenWebUI-User-Email`, which LiteLLM reads as the end user). On shared projects that is whoever prompted, not the owner. Automatic follow-up work in the same turn counts towards the same person. Nothing is sent when the variable is unset or the user has no email. Set `COMFY_BILLING_MODEL` as well to bill each generated image to that person too: an image request to the gateway naming that price list entry and the megapixels drawn.
 
 ## Deploying with Docker
 
