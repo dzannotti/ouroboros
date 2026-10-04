@@ -371,6 +371,19 @@ export const tools: Tool[] = [
     },
   },
   {
+    name: 'web_search',
+    description: 'Search the web and get the top results (title, URL, snippet). Use it to look up library docs, APIs and facts you are unsure of, then fetch_url the most relevant result to read it.',
+    readOnly: true,
+    parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
+    label: (a) => `Searched the web for "${String(a.query).slice(0, 60)}"`,
+    async run(args, ctx) {
+      const url = `${config.search.url}/search?format=json&q=${encodeURIComponent(str(args, 'query'))}`
+      const res = await fetch(url, { signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(20_000)]), headers: { accept: 'application/json' } })
+      if (!res.ok) throw new ToolError(`Search failed (HTTP ${res.status})`)
+      return { output: formatResults((await res.json()) as SearchResponse) }
+    },
+  },
+  {
     name: 'fetch_url',
     description: 'Fetch a web page or API URL and return its text content (HTML is converted to plain text). Useful when the user shares a link or you need documentation.',
     readOnly: true,
@@ -665,6 +678,19 @@ export async function typecheck(projectId: string, signal?: AbortSignal): Promis
   return { ok: res.code === 0, output: output || `tsc exited with ${res.code}` }
 }
 
+type SearchResponse = { results?: { title?: string; url?: string; content?: string }[] }
+
+export function formatResults(body: SearchResponse, limit = 8): string {
+  const seen = new Set<string>()
+  const lines: string[] = []
+  for (const r of body.results ?? []) {
+    if (!r.url || seen.has(r.url) || lines.length >= limit) continue
+    seen.add(r.url)
+    lines.push(`${lines.length + 1}. ${r.title?.trim() || r.url}\n   ${r.url}${r.content ? `\n   ${r.content.replace(/\s+/g, ' ').trim().slice(0, 300)}` : ''}`)
+  }
+  return lines.length ? lines.join('\n') : 'No results.'
+}
+
 const LINT_RULES = ['react/rules-of-hooks', 'react/jsx-key', 'react/jsx-no-duplicate-props']
 
 /** Lints the files changed this turn for real bugs only (warnings are ignored), so the model is not sent on style chores. */
@@ -676,7 +702,7 @@ export async function lint(projectId: string, files: Iterable<string>, signal?: 
 }
 
 export function toolsFor(mode: ChatMode) {
-  const available = tools.filter((t) => (t.name === 'generate_image' ? Boolean(config.comfy.url) : t.name === 'screenshot' ? browser.available() : true))
+  const available = tools.filter((t) => (t.name === 'generate_image' ? Boolean(config.comfy.url) : t.name === 'web_search' ? Boolean(config.search.url) : t.name === 'screenshot' ? browser.available() : true))
   return mode === 'plan' ? available.filter((t) => t.readOnly && t.name !== 'update_plan' && t.name !== 'generate_design_brief') : available
 }
 

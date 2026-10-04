@@ -7,6 +7,7 @@ const PENDING: Record<string, string> = {
   generate_design_brief: 'Designing',
   generate_image: 'Generating image',
   fetch_url: 'Fetching page',
+  web_search: 'Searching the web',
   run_command: 'Running command',
   screenshot: 'Looking at the app',
   enable_backend: 'Setting up backend',

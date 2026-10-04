@@ -169,7 +169,7 @@ async function execute(opts: { projectId: string; userMessageId: string; assista
     const tools = toolSchemas(mode)
     let fixRounds = 0
 
-    const system: ChatCompletionMessageParam = { role: 'system', content: systemPrompt({ mode, firstTurn, instructions, imageGeneration: Boolean(config.comfy.url) }) }
+    const system: ChatCompletionMessageParam = { role: 'system', content: systemPrompt({ mode, firstTurn, instructions, imageGeneration: Boolean(config.comfy.url), webSearch: Boolean(config.search.url) }) }
     for (let step = 0; step < config.ai.maxSteps; step++) {
       if (estimateTokens([system, ...history, ...transcript]) > config.ai.contextBudget) {
         // Compact well below the budget and keep the result, so later steps stay append-only and hit the prompt cache.

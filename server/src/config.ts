@@ -39,6 +39,9 @@ export const config = {
     userHeader: process.env.AI_USER_HEADER?.trim() || undefined,
     reasoningEffort: (['low', 'medium', 'high'] as const).find((e) => e === process.env.AI_REASONING_EFFORT),
   },
+  search: {
+    url: (process.env.SEARXNG_URL ?? '').replace(/\/$/, ''),
+  },
   comfy: {
     url: (process.env.COMFY_URL ?? '').replace(/\/$/, ''),
     model: process.env.COMFY_MODEL ?? 'z_image_turbo_bf16.safetensors',

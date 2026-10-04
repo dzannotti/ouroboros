@@ -49,7 +49,7 @@ Current date: ${today()}. Always reply in the same language as the user.
 - Accessibility: semantic HTML (header/nav/main/footer, one h1, headings in order, real <button>/<a>), a <label> for every input, alt text on images, text contrast of at least 4.5:1, and never signal state by color alone.
 - Icons: lucide-react only, sizes 16/20/24 (size-4/size-5/size-6). Never use emojis as icons. Never draw complex SVGs or decorative blobs/circles by hand.
 {{IMAGES}}
-- Semantic HTML (header, nav, main, section, footer), aria-label on icon-only buttons, visible focus states.
+{{RESEARCH}}- Semantic HTML (header, nav, main, section, footer), aria-label on icon-only buttons, visible focus states.
 - Set a fitting <title> and <meta name="description"> in index.html.
 - In JSX text, escape characters like < > { } by wrapping them in a string: {'1 < 2'}.
 - Never add a light/dark mode toggle unless asked.`
@@ -70,12 +70,15 @@ const PLAN_MODE = `
 # Plan mode
 The user wants to discuss and plan before building. Do NOT create, edit or delete files and do NOT install packages. You may read files, search, read logs and fetch URLs. Answer questions directly. When asked to plan a feature, reply with a short plan in markdown under a "## Plan" heading: what will be built, which files change, and any open questions. Keep it concise.`
 
-export function systemPrompt(opts: { mode: ChatMode; firstTurn: boolean; instructions?: string; imageGeneration?: boolean }) {
+export function systemPrompt(opts: { mode: ChatMode; firstTurn: boolean; instructions?: string; imageGeneration?: boolean; webSearch?: boolean }) {
   const images = opts.imageGeneration
     ? '- Images: never leave placeholders. Use generate_image for the images that matter (hero, key features/products, about photo), saved as .jpg under src/assets, and import them as ES modules. Only if image generation fails, fall back to https://picsum.photos/seed/<word>/<w>/<h>. Always give meaningful alt text.'
     : '- Images: use real stock photos via https://picsum.photos/seed/<descriptive-word>/<width>/<height> (stable per seed). Always give meaningful alt text.'
   const custom = opts.instructions?.trim() ? `\n\n# Project instructions from the user (always follow)\n${opts.instructions.trim()}` : ''
-  return CORE.replace('{{IMAGES}}', images) + (opts.mode === 'plan' ? PLAN_MODE : opts.firstTurn ? FIRST_TURN : '') + custom
+  const research = opts.webSearch
+    ? "- Research: when the request involves a library, API, integration or real-world facts you are not sure about (current package APIs, how a service works, details of a real business or topic), use web_search and then fetch_url the best result before writing code. Prefer official docs. Skip it for routine UI work you already know.\n"
+    : ''
+  return CORE.replace('{{IMAGES}}', images).replace('{{RESEARCH}}', research) + (opts.mode === 'plan' ? PLAN_MODE : opts.firstTurn ? FIRST_TURN : '') + custom
 }
 
 export const DESIGN_BRIEF_PROMPT = `You are a senior product designer. Write a concise, concrete design brief (max 250 words) for the app described by the user. It will be implemented with React, Tailwind CSS v4 and shadcn/ui.

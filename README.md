@@ -12,6 +12,7 @@ A self-hosted AI app builder in the spirit of Lovable and v0. You describe an ap
 - **Backend ("Cloud")**: per-project Supabase-compatible stack (Postgres, auth, PostgREST, storage, Bun server functions). Migrations need approval in chat, secrets are entered in secure cards, and a security scan checks row-level security.
 - **Self-healing**: type checks, a lint pass for real bugs, a headless-browser check (runtime errors, broken images, failed requests) and deterministic fixers run after every turn.
 - **Images** (optional): generated with ComfyUI (Z-Image Turbo).
+- **Research** (optional): the agent can search the web through SearXNG and read pages, to check library docs, APIs and facts before writing code.
 
 ## Architecture
 
@@ -31,7 +32,7 @@ Each project gets a container running its dev server. A project's backend is a s
 
 - Linux with **podman** or **docker**, and **Node 22+**
 - An OpenAI-compatible endpoint with tool calling (LiteLLM, vLLM, llama.cpp server, Ollama…). Developed against Qwen-class ~35B models.
-- Optional: ComfyUI (image generation), Chrome/Chromium (screenshots, thumbnails, runtime checks), an embeddings model
+- Optional: ComfyUI (image generation), SearXNG with the JSON format enabled (`SEARXNG_URL`, web search), Chrome/Chromium (screenshots, thumbnails, runtime checks), an embeddings model
 - Raise inotify limits, because every project runs a file-watching dev server: `sudo sysctl -w fs.inotify.max_user_instances=8192` (persist it in `/etc/sysctl.d/`). With a lower limit Ouroboros falls back to polling.
 
 ## Run locally

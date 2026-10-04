@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { findBlock } from './tools.ts'
+import { findBlock, formatResults } from './tools.ts'
 
 const file = `function a() {\n  return 1\n}\n\nfunction b() {\n    return 2\n}\n`
 
@@ -19,4 +19,14 @@ test('findBlock tolerates indentation differences', () => {
 test('findBlock reports ambiguity and misses', () => {
   assert.equal(findBlock(file, 'return').count, 2)
   assert.equal(findBlock(file, 'nope').index, -1)
+})
+
+test('formatResults numbers unique results and trims snippets', () => {
+  const out = formatResults({ results: [
+    { title: 'Sonner - shadcn/ui', url: 'https://ui.shadcn.com/docs/sonner', content: '  An opinionated\ntoast component  ' },
+    { title: 'dupe', url: 'https://ui.shadcn.com/docs/sonner' },
+    { url: 'https://example.com/x' },
+  ] })
+  assert.equal(out, '1. Sonner - shadcn/ui\n   https://ui.shadcn.com/docs/sonner\n   An opinionated toast component\n2. https://example.com/x\n   https://example.com/x')
+  assert.equal(formatResults({ results: [] }), 'No results.')
 })
