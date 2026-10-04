@@ -25,6 +25,25 @@ export function userHeaders(
     : {};
 }
 
+/**
+ * Bills one generated image to the user behind the current turn: an image request to the gateway naming the price list
+ * entry (COMFY_BILLING_MODEL) and the megapixels drawn. Nothing is generated there. A no-op when billing is not configured.
+ */
+export async function billImage(width: number, height: number, model = config.comfy.billingModel): Promise<void> {
+  if (!model) return;
+  const res = await fetch(`${config.ai.baseUrl}/images/generations`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${config.ai.apiKey}`,
+      ...userHeaders(),
+    },
+    body: JSON.stringify({ model, prompt: model, metadata: { units: (width * height) / 1_000_000 } }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!res.ok) throw new Error(`The gateway returned ${res.status} when billing ${model}`);
+}
+
 export async function embed(input: string[]): Promise<number[][]> {
   if (!config.ai.embeddingModel)
     throw new Error("Embeddings are not configured (AI_EMBEDDING_MODEL)");

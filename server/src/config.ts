@@ -47,6 +47,8 @@ export const config = {
     model: process.env.COMFY_MODEL ?? 'z_image_turbo_bf16.safetensors',
     textEncoder: process.env.COMFY_TEXT_ENCODER ?? 'qwen_3_4b.safetensors',
     vae: process.env.COMFY_VAE ?? 'ae.safetensors',
+    /** Price list entry at AI_BASE_URL that each generated image is billed as, per megapixel, to the prompting user. Unset bills nothing. */
+    billingModel: process.env.COMFY_BILLING_MODEL ?? '',
   },
   devUser: process.env.AUTH_DEV_USER ?? (process.env.NODE_ENV === 'production' ? undefined : 'dev'),
   publicUrl: process.env.PUBLIC_URL?.replace(/\/$/, ''),
