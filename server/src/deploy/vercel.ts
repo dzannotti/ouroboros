@@ -30,6 +30,10 @@ async function call<T>(auth: VercelAuth, method: string, route: string, body?: u
 }
 
 export async function account(auth: VercelAuth): Promise<string> {
+  if (auth.teamId) {
+    const team = await call<{ name?: string; slug: string }>(auth, 'GET', `/v2/teams/${auth.teamId}`)
+    return team.name || team.slug
+  }
   const { user } = await call<{ user: { username: string; email?: string } }>(auth, 'GET', '/v2/user')
   return user.username
 }
