@@ -102,6 +102,18 @@ export type SandboxStatus = 'stopped' | 'starting' | 'installing' | 'ready' | 'e
 
 export type ChatMode = 'build' | 'plan'
 
+export type DeployProvider = 'vercel' | 'supabase'
+export type Connection = { provider: DeployProvider; account: string; createdAt: string }
+export type Deployment = {
+  status: 'idle' | 'running' | 'ready' | 'error'
+  step: string | null
+  error: string | null
+  url: string | null
+  sha: string | null
+  supabaseRef: string | null
+  deployedAt: string | null
+}
+
 export type ProjectEvent =
   | { type: 'message'; message: Message }
   | { type: 'part'; messageId: string; index: number; part: Part }
@@ -111,4 +123,5 @@ export type ProjectEvent =
   | { type: 'sandbox'; status: SandboxStatus; error?: string }
   | { type: 'project'; project: Project }
   | { type: 'versions' }
+  | { type: 'deploy'; deployment: Deployment }
   | { type: 'log'; source: 'dev' | 'browser'; level: string; message: string; at: number }

@@ -83,7 +83,7 @@ const httpOk = (url: string) => async () => (await fetch(url, { signal: AbortSig
 async function assetsDir() {
   const dir = path.join(config.dataDir, 'backend-assets')
   await mkdir(dir, { recursive: true })
-  for (const f of ['functions-runner.ts', 'roles.sql', 'jwt.sql']) await copyFile(path.join(assets, f), path.join(dir, f))
+  for (const f of ['functions-runner.ts', 'deno-imports.ts', 'roles.sql', 'jwt.sql']) await copyFile(path.join(assets, f), path.join(dir, f))
   return hostPath(dir)
 }
 
@@ -106,7 +106,8 @@ async function startFunctions(id: string, c: Creds) {
     [
       '--init',
       ...hostGatewayArgs(),
-      '-v', `${dir}/functions-runner.ts:/runner.ts:ro,${relabel(true)}`,
+      '-v', `${dir}/functions-runner.ts:/opt/ouroboros/runner.ts:ro,${relabel(true)}`,
+      '-v', `${dir}/deno-imports.ts:/opt/ouroboros/deno-imports.ts:ro,${relabel(true)}`,
       '-v', `${hostPath(fnDir)}:/functions:ro,${relabel(true)}`,
       '-e', `SUPABASE_URL=${gatewayFromContainers()}/b/${id}`,
       '-e', `SUPABASE_ANON_KEY=${c.anonKey}`,
@@ -115,7 +116,7 @@ async function startFunctions(id: string, c: Creds) {
       ...(await secretsEnv(id)),
     ],
     IMAGES.functions,
-    ['bun', 'run', '/runner.ts'],
+    ['bun', 'run', '/opt/ouroboros/runner.ts'],
   )
 }
 

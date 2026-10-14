@@ -1,5 +1,5 @@
 import type { StyleChanges } from '@shared/styles'
-import type { Message, ModelInfo, Project, SandboxStatus, SelectedElement, Sharing, Version } from '@shared/types'
+import type { Connection, DeployProvider, Deployment, Message, ModelInfo, Project, SandboxStatus, SelectedElement, Sharing, Version } from '@shared/types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -30,7 +30,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 const json = (body: unknown) => JSON.stringify(body)
 
 export type ProjectDetail = Project & { sandbox: { status: SandboxStatus; error?: string }; running: string | null }
-export type AppConfig = { models: ModelInfo[]; previewPort: number; previewUrl: string | null }
+export type AppConfig = { models: ModelInfo[]; previewPort: number; previewUrl: string | null; oauth: Record<DeployProvider, boolean> }
 export type User = { id: string; name: string; email: string | null; role: 'admin' | 'user'; picture: string | null; authMode: 'oidc' | 'header' | 'dev' }
 export type TableInfo = { name: string; rls: boolean; rows: number; columns: { name: string; type: string; nullable: boolean; default: string | null }[]; policies: { name: string; command: string; roles: string[]; using: string | null; check: string | null }[] }
 export type BackendInfo = { enabled: false } | { enabled: true; status: { status: string; error?: string }; tables: TableInfo[]; findings: { level: 'error' | 'warn' | 'info'; table: string; message: string }[]; secrets: { name: string; createdAt: string }[] }
@@ -73,6 +73,12 @@ export const api = {
   backendUsers: (id: string) => request<{ id: string; email: string; created_at: string; last_sign_in_at: string | null }[]>(`/projects/${id}/backend/users`),
   setSecret: (id: string, name: string, value: string) => request<void>(`/projects/${id}/backend/secrets/${name}`, { method: 'PUT', body: json({ value }) }),
   deleteSecret: (id: string, name: string) => request<void>(`/projects/${id}/backend/secrets/${name}`, { method: 'DELETE' }),
+  connections: () => request<Connection[]>('/connections'),
+  connect: (provider: DeployProvider, token: string) => request<{ account: string }>(`/connections/${provider}`, { method: 'PUT', body: json({ token }) }),
+  disconnect: (provider: DeployProvider) => request<void>(`/connections/${provider}`, { method: 'DELETE' }),
+  connectUrl: (provider: DeployProvider) => `/api/connect/${provider}/start?returnTo=${encodeURIComponent(location.pathname)}`,
+  deployment: (id: string) => request<Deployment>(`/projects/${id}/deployment`),
+  publish: (id: string, sha?: string) => request<Deployment>(`/projects/${id}/deployment`, { method: 'POST', body: json({ sha }) }),
   downloadUrl: (id: string) => `/api/projects/${id}/download`,
 }
 

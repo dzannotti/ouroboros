@@ -12,6 +12,7 @@ A self-hosted AI app builder in the spirit of Lovable and v0. You describe an ap
 - **Backend ("Cloud")**: per-project Supabase-compatible stack (Postgres, auth, PostgREST, storage, Bun server functions). Migrations need approval in chat, secrets are entered in secure cards, and a security scan checks row-level security.
 - **Self-healing**: type checks, a lint pass for real bugs, a headless-browser check (runtime errors, broken images, failed requests) and deterministic fixers run after every turn.
 - **Images** (optional): generated with ComfyUI (Z-Image Turbo).
+- **Publish**: one button puts an app on the internet with the owner's own Vercel account; apps with a backend move it to their own Supabase project, with their data copied on the first publish.
 - **Research** (optional): the agent can search the web through SearXNG and read pages, to check library docs, APIs and facts before writing code.
 
 ## Architecture
@@ -66,6 +67,17 @@ Without that, the model id is shown. `AI_MODELS` pins the list instead, and `AI_
 - The data directory must be mounted at the host path given in `HOST_DATA_DIR`, because project folders are bind-mounted into those sibling containers.
 - Point `DATABASE_URL` at a Postgres you manage.
 - Put a reverse proxy in front of 8787 (app) and 8788 (previews), and set `PUBLIC_URL` / `PREVIEW_URL` accordingly.
+
+## Publishing
+
+The **Publish** button in a project puts the app on the internet using the project owner's own accounts.
+
+- **Vercel** hosts the site. Each publish builds the chosen version (the latest, or any version from history) and makes it the production deployment at a stable `<app>-<id>.vercel.app` address.
+- **Supabase** runs the backend, for apps that have one. The first publish creates a Supabase project and copies over the tables, sign-in accounts (passwords included) and uploaded files. Later publishes apply new migrations, buckets, server functions and secrets, and never overwrite live data.
+
+People connect their accounts once, from the Publish popover or **Connected accounts** in the account menu. By default they paste an access token; if the operator registers OAuth apps (see `.env.example`), it becomes a one-click connect. Tokens are stored encrypted with a key derived from `SESSION_SECRET` (or a key file in the data directory).
+
+Limits come from the providers' free plans: Supabase allows two free projects per person and pauses them after a week without use (publishing wakes them up), and Vercel's Hobby plan is for non-commercial use.
 
 ## Auth
 

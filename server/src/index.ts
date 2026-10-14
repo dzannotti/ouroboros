@@ -13,6 +13,7 @@ import { connect } from './db.ts'
 import { ensureDatabase } from './infra/postgres.ts'
 import { cli, ensureImage, sharedNetwork } from './infra/runtime.ts'
 import { markInterrupted } from './messages.ts'
+import { markInterrupted as markDeploysInterrupted } from './deploy/index.ts'
 import { startPreviewGateway } from './preview.ts'
 import * as backend from './backend.ts'
 import { startReaper } from './sandbox.ts'
@@ -24,7 +25,10 @@ startModelRefresh()
 
 await connect(await ensureDatabase(), config.databaseReadOnly)
 if (config.databaseReadOnly) console.warn('[ouroboros] DB_READONLY: database is read-only (debugging) — writes will fail')
-else await markInterrupted()
+else {
+  await markInterrupted()
+  await markDeploysInterrupted()
+}
 await ensureImage(config.sandboxImage, path.join(config.root, 'sandbox/Containerfile'), config.root)
 
 const app = new Hono()

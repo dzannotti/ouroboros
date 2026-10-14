@@ -39,6 +39,17 @@ export const config = {
     userHeader: process.env.AI_USER_HEADER?.trim() || undefined,
     reasoningEffort: (['low', 'medium', 'high'] as const).find((e) => e === process.env.AI_REASONING_EFFORT),
   },
+  deploy: {
+    vercel: {
+      clientId: process.env.VERCEL_CLIENT_ID ?? '',
+      clientSecret: process.env.VERCEL_CLIENT_SECRET ?? '',
+      integrationSlug: process.env.VERCEL_INTEGRATION_SLUG ?? '',
+    },
+    supabase: {
+      clientId: process.env.SUPABASE_OAUTH_CLIENT_ID ?? '',
+      clientSecret: process.env.SUPABASE_OAUTH_CLIENT_SECRET ?? '',
+    },
+  },
   search: {
     url: (process.env.SEARXNG_URL ?? '').replace(/\/$/, ''),
   },

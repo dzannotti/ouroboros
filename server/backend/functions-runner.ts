@@ -1,7 +1,39 @@
-import { existsSync, statSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { toBunImports } from './deno-imports.ts'
 
 const ROOT = '/functions'
-let registered: ((req: Request) => Response | Promise<Response>) | null = null
+const CACHE = '/tmp/functions'
+
+const newest = (dir: string): number =>
+  existsSync(dir) ? Math.max(statSync(dir).mtimeMs, ...readdirSync(dir, { withFileTypes: true }).map((e) => (e.isDirectory() ? newest(join(dir, e.name)) : statSync(join(dir, e.name)).mtimeMs))) : 0
+
+/** Copies the function (and _shared) with Deno-style imports rewritten for Bun, once per change. */
+function prepare(name: string): string {
+  const version = Math.floor(Math.max(newest(join(ROOT, name)), newest(join(ROOT, '_shared'))))
+  const out = join(CACHE, String(version))
+  if (!existsSync(join(out, name))) {
+    rmSync(out, { recursive: true, force: true })
+    for (const dir of [name, '_shared']) {
+      if (!existsSync(join(ROOT, dir))) continue
+      cpSync(join(ROOT, dir), join(out, dir), { recursive: true })
+    }
+    const rewrite = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, e.name)
+        if (e.isDirectory()) rewrite(full)
+        else if (/\.(ts|tsx|js|mjs)$/.test(e.name)) writeFileSync(full, toBunImports(readFileSync(full, 'utf8')))
+      }
+    }
+    mkdirSync(out, { recursive: true })
+    rewrite(out)
+  }
+  return join(out, name)
+}
+
+type Handler = (req: Request) => Response | Promise<Response>
+let registered: Handler | null = null
+const handlers = new Map<string, Handler>()
 
 ;(globalThis as Record<string, unknown>).Deno = {
   env: { get: (key: string) => process.env[key], toObject: () => ({ ...process.env }) },
@@ -23,14 +55,19 @@ Bun.serve({
     if (req.method === 'OPTIONS') return new Response(null, { headers: cors })
     const name = new URL(req.url).pathname.split('/').filter(Boolean)[0]
     if (!name || !/^[\w-]+$/.test(name)) return Response.json({ error: 'Function not found' }, { status: 404, headers: cors })
-    const file = ['index.ts', 'index.js'].map((f) => `${ROOT}/${name}/${f}`).find((f) => existsSync(f))
-    if (!file) return Response.json({ error: `Function "${name}" not found` }, { status: 404, headers: cors })
+    const entry = ['index.ts', 'index.js'].find((f) => existsSync(`${ROOT}/${name}/${f}`))
+    if (!entry) return Response.json({ error: `Function "${name}" not found` }, { status: 404, headers: cors })
     try {
-      registered = null
-      const mod = await import(`${file}?v=${statSync(file).mtimeMs}`)
-      const handler = registered ?? mod.default
+      const file = join(prepare(name), entry)
+      let handler = handlers.get(file)
+      if (!handler) {
+        registered = null
+        const mod = await import(file)
+        handler = registered ?? mod.default
+        if (typeof handler === 'function') handlers.set(file, handler)
+      }
       if (typeof handler !== 'function') return Response.json({ error: 'Function must export a default handler or call Deno.serve()' }, { status: 500, headers: cors })
-      const res: Response = await handler(req)
+      const res: Response = await (handler as Handler)(req)
       const headers = new Headers(res.headers)
       for (const [k, v] of Object.entries(cors)) if (!headers.has(k)) headers.set(k, v)
       return new Response(res.body, { status: res.status, headers })
