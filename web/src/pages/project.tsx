@@ -13,6 +13,7 @@ import { CloudView } from '@/components/project/cloud-view'
 import { CodeView } from '@/components/project/code-view'
 import { SettingsDialog } from '@/components/project/settings-dialog'
 import { ShareDialog } from '@/components/project/share-dialog'
+import { PublishButton, usePublish } from '@/components/project/publish-button'
 import { DiffDialog, VersionsPanel } from '@/components/project/versions-panel'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
@@ -41,6 +42,8 @@ export default function ProjectPage() {
   const sandbox = useSandbox(id, project?.sandbox)
   const isOwner = project?.access === 'owner'
   const canEdit = project?.access !== 'view'
+  const publish = usePublish(id)
+  const { data: deployment } = useQuery({ queryKey: ['deployment', id], queryFn: () => api.deployment(id), enabled: isOwner })
   const remixProject = () =>
     void api
       .remix(id)
@@ -305,7 +308,15 @@ export default function ProjectPage() {
         </div>
       </div>
       {panel === 'history' ? (
-        <VersionsPanel projectId={id} running={running} onRestore={(sha) => restore.mutate(sha)} onPreview={openSnapshot} onClose={() => setPanel('chat')} />
+        <VersionsPanel
+          projectId={id}
+          running={running}
+          onRestore={(sha) => restore.mutate(sha)}
+          onPreview={openSnapshot}
+          onClose={() => setPanel('chat')}
+          liveSha={deployment?.status === 'ready' || deployment?.url ? deployment?.sha : null}
+          onPublish={isOwner ? (sha) => publish.mutate(sha, { onSuccess: () => toast.success('Publishing this version…') }) : undefined}
+        />
       ) : (
         <>
           <MessageList messages={messages} actions={actions} onEdit={setText} />
@@ -434,6 +445,7 @@ export default function ProjectPage() {
         <IconButton label="Download code" onClick={() => (location.href = api.downloadUrl(id))}>
           <Download />
         </IconButton>
+        {project && isOwner && <PublishButton project={project} />}
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden border-t md:mr-2 md:mb-2 md:rounded-xl md:border">
         {project && (

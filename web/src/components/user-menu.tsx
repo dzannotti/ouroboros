@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { LogOut, Monitor, Moon, Sun } from 'lucide-react'
+import { useState } from 'react'
+import { Link2, LogOut, Monitor, Moon, Sun } from 'lucide-react'
+import { ConnectionsDialog } from '@/components/project/connect-account'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
@@ -9,8 +11,10 @@ import { api } from '@/lib/api'
 export function UserMenu() {
   const { data: user } = useQuery({ queryKey: ['me'], queryFn: api.me, staleTime: Infinity })
   const { theme, setTheme } = useTheme()
+  const [accounts, setAccounts] = useState(false)
   const initials = (user?.name ?? '?').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()
   return (
+    <>
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="rounded-full" aria-label="Account">
@@ -28,6 +32,10 @@ export function UserMenu() {
           </span>
           {user?.email && <span className="text-xs font-normal text-muted-foreground">{user.email}</span>}
         </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => setAccounts(true)}>
+          <Link2 /> Connected accounts
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Theme</DropdownMenuLabel>
         <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as typeof theme)}>
@@ -53,5 +61,7 @@ export function UserMenu() {
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+    <ConnectionsDialog open={accounts} onOpenChange={setAccounts} />
+    </>
   )
 }

@@ -1,6 +1,6 @@
 import type { Version } from '@shared/types'
 import { useQuery } from '@tanstack/react-query'
-import { CircleCheck, Eye, FileDiff, RotateCcw } from 'lucide-react'
+import { CircleCheck, Eye, FileDiff, Globe, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
@@ -10,9 +10,9 @@ import { api } from '@/lib/api'
 import { timeAgo } from '@/lib/time'
 import { cn } from '@/lib/utils'
 
-type Props = { projectId: string; running: boolean; onRestore: (sha: string) => void; onPreview: (sha: string) => void; onClose: () => void }
+type Props = { projectId: string; running: boolean; onRestore: (sha: string) => void; onPreview: (sha: string) => void; onClose: () => void; liveSha?: string | null; onPublish?: (sha: string) => void }
 
-export function VersionsPanel({ projectId, running, onRestore, onPreview }: Props) {
+export function VersionsPanel({ projectId, running, onRestore, onPreview, liveSha, onPublish }: Props) {
   const { data: versions } = useQuery({ queryKey: ['versions', projectId], queryFn: () => api.versions(projectId) })
   const [confirm, setConfirm] = useState<Version | null>(null)
   const [diff, setDiff] = useState<Version | null>(null)
@@ -40,6 +40,11 @@ export function VersionsPanel({ projectId, running, onRestore, onPreview }: Prop
                   <span className="flex items-center gap-2 text-xs text-muted-foreground">
                     {timeAgo(v.createdAt)}
                     {v.current && <span className="rounded bg-background px-1.5 py-px font-medium text-foreground">Current</span>}
+                    {v.sha === liveSha && (
+                      <span className="flex items-center gap-1 rounded bg-background px-1.5 py-px font-medium text-foreground">
+                        <Globe className="size-3" /> Live
+                      </span>
+                    )}
                     {v.good && (
                       <span className="flex items-center gap-1">
                         <CircleCheck className="size-3" /> Working
@@ -51,6 +56,11 @@ export function VersionsPanel({ projectId, running, onRestore, onPreview }: Prop
                   {i < versions.length - 1 && (
                     <Button variant="ghost" size="icon" className="size-7" aria-label="View changes" onClick={() => setDiff(v)}>
                       <FileDiff />
+                    </Button>
+                  )}
+                  {onPublish && v.sha !== liveSha && (
+                    <Button variant="ghost" size="icon" className="size-7" aria-label="Publish this version" onClick={() => onPublish(v.sha)}>
+                      <Globe />
                     </Button>
                   )}
                   {!v.current && (

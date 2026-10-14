@@ -52,6 +52,7 @@ function apply(qc: QueryClient, id: string, events: ProjectEvent[]) {
     }
     if (e.type === 'sandbox') qc.setQueryData(['sandbox', id], { status: e.status, error: e.error })
     if (e.type === 'versions') void qc.invalidateQueries({ queryKey: ['versions', id] })
+    if (e.type === 'deploy') qc.setQueryData(['deployment', id], e.deployment)
     if (e.type === 'files') {
       void qc.invalidateQueries({ queryKey: ['files', id] })
       void qc.invalidateQueries({ queryKey: ['file', id] })

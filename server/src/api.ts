@@ -20,6 +20,12 @@ import * as approvals from './approvals.ts'
 import * as backend from './backend.ts'
 import { sql } from './db.ts'
 import { buildVersion } from './version-preview.ts'
+import * as deploy from './deploy/index.ts'
+import * as supabaseApi from './deploy/supabase.ts'
+import * as vercelApi from './deploy/vercel.ts'
+import { sign, unsign } from './auth.ts'
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
+import { createHash, randomBytes } from 'node:crypto'
 import { inspect, type TextSegment, visualEdit } from './visual-edit.ts'
 
 type Env = { Variables: { user: User } }
@@ -77,7 +83,59 @@ async function answerOpenQuestions(projectId: string) {
 
 api.get('/me', (c) => c.json({ ...c.get('user'), authMode: config.auth.mode }))
 
-api.get('/config', (c) => c.json({ models, previewPort: config.previewPort, previewUrl: config.previewUrl ?? null }))
+api.get('/config', (c) => c.json({ models, previewPort: config.previewPort, previewUrl: config.previewUrl ?? null, oauth: deploy.oauthAvailable() }))
+
+api.get('/connections', async (c) => c.json(await deploy.connections(c.get('user').id)))
+
+const provider = (c: { req: { param: (k: string) => string } }) => {
+  const p = c.req.param('provider')
+  if (!deploy.isProvider(p)) throw new HTTPException(404, { message: 'Unknown provider' })
+  return p
+}
+
+api.put('/connections/:provider', async (c) => {
+  const { token } = await body<{ token?: unknown }>(c)
+  if (typeof token !== 'string' || token.trim().length < 10) throw new HTTPException(400, { message: 'Paste the whole token' })
+  try {
+    return c.json({ account: await deploy.connect(c.get('user').id, provider(c), { token: token.trim() }) })
+  } catch (err) {
+    throw new HTTPException(400, { message: `That token did not work: ${(err as Error).message}` })
+  }
+})
+
+api.delete('/connections/:provider', async (c) => {
+  await deploy.disconnect(c.get('user').id, provider(c))
+  return c.body(null, 204)
+})
+
+const CONNECT_COOKIE = 'ob_connect'
+const callbackUrl = (c: { req: { url: string } }, p: string) => `${config.publicUrl ?? new URL(c.req.url).origin}/api/connect/${p}/callback`
+const safeReturn = (to: string | undefined) => (to && to.startsWith('/') && !to.startsWith('//') ? to : '/')
+
+api.get('/connect/:provider/start', (c) => {
+  const p = provider(c)
+  if (!deploy.oauthAvailable()[p]) throw new HTTPException(404, { message: 'One-click connect is not set up on this server' })
+  const flow = { provider: p, state: randomBytes(16).toString('base64url'), verifier: randomBytes(32).toString('base64url'), returnTo: safeReturn(c.req.query('returnTo')) }
+  setCookie(c, CONNECT_COOKIE, sign(Buffer.from(JSON.stringify(flow)).toString('base64url')), { httpOnly: true, sameSite: 'Lax', secure: callbackUrl(c, p).startsWith('https://'), path: '/api/connect', maxAge: 600 })
+  if (p === 'vercel') return c.redirect(vercelApi.authorizeUrl(config.deploy.vercel.integrationSlug, flow.state))
+  const challenge = createHash('sha256').update(flow.verifier).digest('base64url')
+  return c.redirect(supabaseApi.authorizeUrl({ clientId: config.deploy.supabase.clientId, redirectUri: callbackUrl(c, p), state: flow.state, challenge }))
+})
+
+api.get('/connect/:provider/callback', async (c) => {
+  const p = provider(c)
+  const raw = unsign(getCookie(c, CONNECT_COOKIE))
+  deleteCookie(c, CONNECT_COOKIE, { path: '/api/connect' })
+  const flow = raw ? (JSON.parse(Buffer.from(raw, 'base64url').toString()) as { provider: string; state: string; verifier: string; returnTo: string }) : null
+  const code = c.req.query('code')
+  if (!flow || flow.provider !== p || flow.state !== c.req.query('state') || !code) throw new HTTPException(400, { message: 'This sign-in link expired. Try connecting again.' })
+  const grant =
+    p === 'vercel'
+      ? await vercelApi.exchangeCode({ ...config.deploy.vercel, code, redirectUri: callbackUrl(c, p) })
+      : await supabaseApi.oauthToken({ ...config.deploy.supabase, params: { grant_type: 'authorization_code', code, redirect_uri: callbackUrl(c, p), code_verifier: flow.verifier } })
+  await deploy.connect(c.get('user').id, p, grant)
+  return c.redirect(flow.returnTo)
+})
 
 api.get('/projects', async (c) => c.json(await projects.list(c.get('user'), c.req.query('scope') === 'all')))
 
@@ -116,6 +174,20 @@ api.patch('/projects/:id', async (c) => {
 api.get('/projects/:id/sharing', async (c) => c.json(await projects.sharing(await owned(c, 'owner'))))
 
 api.put('/projects/:id/sharing', async (c) => c.json(await projects.setSharing(await owned(c, 'owner'), await body(c))))
+
+api.get('/projects/:id/deployment', async (c) => c.json(await deploy.deployment((await owned(c, 'owner')).id)))
+
+api.post('/projects/:id/deployment', async (c) => {
+  const row = await owned(c, 'owner')
+  const input = await body<{ sha?: unknown }>(c)
+  const sha = typeof input.sha === 'string' && /^[0-9a-f]{40}$/.test(input.sha) ? input.sha : await git.head(projectDir(row.id))
+  try {
+    await deploy.start(row, c.get('user'), sha)
+  } catch (err) {
+    throw new HTTPException(409, { message: (err as Error).message })
+  }
+  return c.json(await deploy.deployment(row.id), 202)
+})
 
 api.post('/projects/:id/remix', async (c) => {
   const row = await owned(c, 'view')
