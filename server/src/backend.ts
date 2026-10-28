@@ -233,7 +233,7 @@ export async function psql(id: string, query: string, opts: { json?: boolean; re
 }
 
 export async function queryJson<T>(id: string, query: string): Promise<T> {
-  const res = await psql(id, `select coalesce(json_agg(t), '[]'::json) from (${query}) t`, { json: true })
+  const res = await psql(id, `select coalesce(jsonb_agg(t), '[]'::jsonb) from (${query}) t`, { json: true })
   if (!res.ok) throw new Error(res.output)
   return JSON.parse(res.output.split('\n').find((l) => l.startsWith('[')) ?? '[]') as T
 }
