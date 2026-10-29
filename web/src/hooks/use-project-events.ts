@@ -66,20 +66,38 @@ export function useProjectEvents(id: string) {
   useEffect(() => {
     let buffer: ProjectEvent[] = []
     let frame = 0
-    const source = new EventSource(`/api/projects/${id}/events`)
-    source.onmessage = (msg) => {
-      buffer.push(JSON.parse(msg.data) as ProjectEvent)
-      frame ||= requestAnimationFrame(() => {
-        frame = 0
-        const batch = buffer
-        buffer = []
-        apply(qc, id, batch)
+    let heard = Date.now()
+    let source: EventSource
+    const connect = () => {
+      heard = Date.now()
+      source = new EventSource(`/api/projects/${id}/events`)
+      source.onmessage = (msg) => {
+        heard = Date.now()
+        buffer.push(JSON.parse(msg.data) as ProjectEvent)
+        frame ||= requestAnimationFrame(() => {
+          frame = 0
+          const batch = buffer
+          buffer = []
+          apply(qc, id, batch)
+        })
+      }
+      source.addEventListener('ping', () => {
+        heard = Date.now()
       })
+      source.onopen = () => {
+        heard = Date.now()
+        void qc.invalidateQueries({ queryKey: ['messages', id] })
+        void qc.invalidateQueries({ queryKey: ['project', id] })
+      }
     }
-    source.onopen = () => {
-      void qc.invalidateQueries({ queryKey: ['messages', id] })
-    }
+    connect()
+    const watchdog = setInterval(() => {
+      if (Date.now() - heard < 45_000) return
+      source.close()
+      connect()
+    }, 15_000)
     return () => {
+      clearInterval(watchdog)
       cancelAnimationFrame(frame)
       source.close()
     }
