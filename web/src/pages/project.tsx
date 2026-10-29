@@ -349,7 +349,12 @@ export default function ProjectPage() {
                 onModelChange={setModel}
                 onSubmit={send}
                 running={running}
-                onStop={() => void api.stop(id)}
+                onStop={() =>
+                  void api.stop(id).finally(() => {
+                    void qc.invalidateQueries({ queryKey: ['project', id] })
+                    void qc.invalidateQueries({ queryKey: ['messages', id] })
+                  })
+                }
                 elements={elements}
                 onRemoveElement={(oid) => setElements((prev) => prev.filter((e) => e.oid !== oid))}
                 selecting={selecting}
