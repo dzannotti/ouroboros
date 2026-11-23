@@ -35,6 +35,7 @@ export function exec(cmd: string, args: string[], opts: { cwd?: string; timeoutM
       clearTimeout(timer)
       resolve({ code, stdout, stderr, timedOut })
     })
+    child.stdin.on('error', () => {})
     child.stdin.end(opts.input ?? '')
   })
 }
