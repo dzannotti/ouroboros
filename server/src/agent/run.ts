@@ -43,7 +43,7 @@ class Stream {
   private persistSoon() {
     this.timer ??= setTimeout(() => {
       this.timer = undefined
-      void messages.save(this.messageId, { parts: this.parts })
+      messages.save(this.messageId, { parts: this.parts }).catch((err) => console.error('[messages] save failed:', err))
     }, 1000)
   }
 
@@ -141,7 +141,9 @@ export async function startRun(opts: { projectId: string; userMessageId: string;
   const abort = new AbortController()
   running.set(opts.projectId, { abort, messageId: assistant.id })
   const email = await messages.authorEmail(opts.userMessageId)
-  void asUser(email, () => execute({ ...opts, assistantId: assistant.id, abort })).finally(() => running.delete(opts.projectId))
+  void asUser(email, () => execute({ ...opts, assistantId: assistant.id, abort }))
+    .catch((err) => console.error('[agent] run failed:', err))
+    .finally(() => running.delete(opts.projectId))
   return assistant
 }
 

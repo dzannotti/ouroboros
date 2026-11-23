@@ -19,6 +19,8 @@ type Row = {
 
 export type StoredMessage = Row
 
+const json = (value: unknown) => sql.json(JSON.parse(JSON.stringify(value, (_, v) => (typeof v === 'string' ? v.replaceAll('\0', '\uFFFD') : v))))
+
 export const toMessage = (r: Row): Message => ({
   id: r.id,
   projectId: r.projectId,
@@ -36,7 +38,7 @@ export const toMessage = (r: Row): Message => ({
 export async function create(projectId: string, role: 'user' | 'assistant', parts: Part[], opts: { mode?: ChatMode; status?: MessageStatus; author?: { id: string; name: string } } = {}): Promise<Row> {
   const [row] = await sql<Row[]>`
     insert into messages (project_id, role, parts, mode, status, author_id)
-    values (${projectId}, ${role}, ${sql.json(parts as never)}, ${opts.mode ?? 'build'}, ${opts.status ?? 'done'}, ${opts.author?.id ?? null})
+    values (${projectId}, ${role}, ${json(parts)}, ${opts.mode ?? 'build'}, ${opts.status ?? 'done'}, ${opts.author?.id ?? null})
     returning *`
   return { ...row, authorName: opts.author?.name ?? null }
 }
@@ -44,8 +46,8 @@ export async function create(projectId: string, role: 'user' | 'assistant', part
 export async function save(id: string, fields: { parts?: Part[]; transcript?: ChatCompletionMessageParam[]; status?: MessageStatus; commitSha?: string | null; durationMs?: number }) {
   await sql`
     update messages set
-      parts = coalesce(${fields.parts ? sql.json(fields.parts as never) : null}, parts),
-      transcript = coalesce(${fields.transcript ? sql.json(fields.transcript as never) : null}, transcript),
+      parts = coalesce(${fields.parts ? json(fields.parts) : null}, parts),
+      transcript = coalesce(${fields.transcript ? json(fields.transcript) : null}, transcript),
       status = coalesce(${fields.status ?? null}, status),
       commit_sha = coalesce(${fields.commitSha ?? null}, commit_sha),
       duration_ms = coalesce(${fields.durationMs ?? null}, duration_ms)
