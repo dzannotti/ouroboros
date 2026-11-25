@@ -1,5 +1,6 @@
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
-import type { ChatMode, Message, MessageStatus, Part } from '../../shared/types.ts'
+import { HTTPException } from 'hono/http-exception'
+import type { ChatMode, Message, MessageStatus, Part, SelectedElement } from '../../shared/types.ts'
 import { sql } from './db.ts'
 
 type Row = {
@@ -72,4 +73,17 @@ export async function authorEmail(id: string): Promise<string | null> {
 
 export async function markInterrupted() {
   await sql`update messages set status = 'stopped' where status = 'streaming'`
+}
+
+export function userParts(input: { text?: string; images?: { url: string; name: string }[]; elements?: SelectedElement[] }): Part[] {
+  const parts: Part[] = []
+  if (input.text?.trim()) parts.push({ type: 'text', text: input.text.trim() })
+  for (const img of input.images ?? []) if (typeof img?.url === 'string') parts.push({ type: 'image', url: img.url, name: String(img.name ?? 'image') })
+  const elements = (input.elements ?? [])
+    .filter((e) => typeof e?.oid === 'string')
+    .slice(0, 10)
+    .map((e) => ({ oid: e.oid, tag: String(e.tag ?? ''), text: String(e.text ?? '').slice(0, 300), className: String(e.className ?? '').slice(0, 500), note: typeof e.note === 'string' ? e.note.slice(0, 500) : undefined }))
+  if (elements.length) parts.push({ type: 'elements', elements })
+  if (!parts.length) throw new HTTPException(400, { message: 'Message is empty' })
+  return parts
 }

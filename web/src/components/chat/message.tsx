@@ -458,6 +458,18 @@ function PartView({ part, actions, isLast }: { part: Part; actions: MessageActio
   switch (part.type) {
     case 'text':
       return <Markdown text={part.text} />
+    case 'steer':
+      return (
+        <div className="flex flex-col items-end gap-1 pl-10">
+          <span className="px-1 text-xs text-muted-foreground">{part.authorName ? `${part.authorName}, while working` : 'Sent while working'}</span>
+          {part.images?.map((img) => (
+            <a key={img.url} href={img.url} target="_blank" rel="noreferrer" className="block size-20 overflow-hidden rounded-xl border bg-muted">
+              <img src={img.url} alt={img.name} className="size-full object-cover" />
+            </a>
+          ))}
+          {part.text && <div className="max-w-full rounded-2xl bg-muted px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap text-foreground">{part.text}</div>}
+        </div>
+      )
     case 'check':
       return (
         <ol>

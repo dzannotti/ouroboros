@@ -40,6 +40,7 @@ export type VersionPart = { type: 'version'; sha: string; title: string; files?:
 export type ErrorPart = { type: 'error'; message: string }
 export type SuggestionsPart = { type: 'suggestions'; items: string[] }
 export type PausedPart = { type: 'paused'; steps: number }
+export type SteerPart = { type: 'steer'; text: string; images?: { url: string; name: string }[]; authorName?: string | null }
 
 export type Part =
   | TextPart
@@ -56,8 +57,13 @@ export type Part =
   | ErrorPart
   | SuggestionsPart
   | PausedPart
+  | SteerPart
 
 export type MessageStatus = 'streaming' | 'done' | 'error' | 'stopped'
+
+export type QueuedInput = { text?: string; images?: { url: string; name: string }[]; elements?: SelectedElement[]; mode?: ChatMode; model?: string }
+
+export type QueuedMessage = { id: string; input: QueuedInput; authorId: string | null; authorName: string | null; createdAt: string }
 
 export type Message = {
   id: string
@@ -119,6 +125,7 @@ export type ProjectEvent =
   | { type: 'part'; messageId: string; index: number; part: Part }
   | { type: 'delta'; messageId: string; index: number; text: string }
   | { type: 'status'; messageId: string; status: MessageStatus }
+  | { type: 'queue'; queue: QueuedMessage[] }
   | { type: 'files'; paths: string[] }
   | { type: 'sandbox'; status: SandboxStatus; error?: string }
   | { type: 'project'; project: Project }

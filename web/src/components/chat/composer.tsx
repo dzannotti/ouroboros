@@ -27,6 +27,7 @@ type Props = {
   onToggleSelect?: () => void
   text?: string
   onTextChange?: (text: string) => void
+  history?: string[]
 }
 
 const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
@@ -39,6 +40,7 @@ export function Composer(props: Props) {
   const [files, setFiles] = useState<File[]>([])
   const [mode, setMode] = useState<'build' | 'plan'>('build')
   const [busy, setBusy] = useState(false)
+  const [recalled, setRecalled] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const model = config?.models.find((m) => m.id === props.model) ?? config?.models[0]
@@ -59,6 +61,7 @@ export function Composer(props: Props) {
       await props.onSubmit({ text: text.trim(), files, mode, model: props.model })
       setText('')
       setFiles([])
+      setRecalled(null)
     } catch (err) {
       toast.error((err as Error).message)
     } finally {
@@ -66,10 +69,27 @@ export function Composer(props: Props) {
     }
   }
 
+  const recall = (index: number | null) => {
+    setRecalled(index)
+    setText(index === null ? '' : (props.history?.[index] ?? ''))
+  }
+
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
       void submit()
+      return
+    }
+    const history = props.history ?? []
+    const untouched = text === '' || (recalled !== null && text === history[recalled])
+    if (!history.length || !untouched || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey) return
+    const { selectionStart, selectionEnd, value } = e.currentTarget
+    if (e.key === 'ArrowUp' && selectionStart === selectionEnd && !value.slice(0, selectionStart).includes('\n') && recalled !== 0) {
+      e.preventDefault()
+      recall(recalled === null ? history.length - 1 : recalled - 1)
+    } else if (e.key === 'ArrowDown' && recalled !== null && selectionStart === selectionEnd && !value.slice(selectionEnd).includes('\n')) {
+      e.preventDefault()
+      recall(recalled + 1 < history.length ? recalled + 1 : null)
     }
   }
 

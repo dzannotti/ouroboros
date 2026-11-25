@@ -1,5 +1,5 @@
 import type { StyleChanges } from '@shared/styles'
-import type { Connection, DeployProvider, Deployment, Message, ModelInfo, Project, SandboxStatus, SelectedElement, Sharing, Version } from '@shared/types'
+import type { Connection, DeployProvider, Deployment, Message, ModelInfo, Project, QueuedMessage, SandboxStatus, SelectedElement, Sharing, Version } from '@shared/types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -49,6 +49,9 @@ export const api = {
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
   messages: (id: string) => request<Message[]>(`/projects/${id}/messages`),
   send: (id: string, input: SendInput) => request<Message>(`/projects/${id}/messages`, { method: 'POST', body: json(input) }),
+  queue: (id: string) => request<QueuedMessage[]>(`/projects/${id}/queue`),
+  enqueue: (id: string, input: SendInput) => request<{ message?: Message }>(`/projects/${id}/queue`, { method: 'POST', body: json(input) }),
+  unqueue: (id: string, queued: string) => request<void>(`/projects/${id}/queue/${queued}`, { method: 'DELETE' }),
   stop: (id: string) => request<void>(`/projects/${id}/stop`, { method: 'POST' }),
   files: (id: string) => request<string[]>(`/projects/${id}/files`),
   file: (id: string, path: string, sha?: string) => request<string>(`/projects/${id}/file?path=${encodeURIComponent(path)}${sha ? `&sha=${sha}` : ''}`),
