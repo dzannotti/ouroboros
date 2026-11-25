@@ -27,6 +27,10 @@ export async function next(projectId: string): Promise<Row | undefined> {
   return (await rows(projectId))[0]
 }
 
+export async function restore(row: Row) {
+  await sql`insert into queued_messages (id, project_id, author_id, input, created_at) values (${row.id}, ${row.projectId}, ${row.authorId}, ${sql.json(row.input as never)}, ${row.createdAt}) on conflict (id) do nothing`
+}
+
 export async function remove(projectId: string, id: string) {
   await sql`delete from queued_messages where project_id = ${projectId} and id = ${id}`
 }

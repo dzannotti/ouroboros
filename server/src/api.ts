@@ -232,8 +232,13 @@ async function drain(projectId: string) {
   try {
     const next = await queue.next(projectId)
     if (!next) return
-    await send(projectId, next.authorId ? { id: next.authorId, name: next.authorName ?? '' } : undefined, next.input)
     await queue.remove(projectId, next.id)
+    try {
+      await send(projectId, next.authorId ? { id: next.authorId, name: next.authorName ?? '' } : undefined, next.input)
+    } catch (err) {
+      await queue.restore(next)
+      throw err
+    }
   } catch (err) {
     console.error(`[queue] could not send the next queued message for ${projectId}:`, err)
   } finally {
