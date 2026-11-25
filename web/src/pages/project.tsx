@@ -672,7 +672,8 @@ function MessageList({ messages, actions, onEdit }: { messages: Message[] | unde
 
   const showEarlier = () => {
     const el = scroller.current
-    if (el) anchor.current = el.scrollHeight - el.scrollTop
+    if (!el || anchor.current !== null) return
+    anchor.current = el.scrollHeight - el.scrollTop
     setShown((n) => n + PAGE)
   }
 
@@ -698,6 +699,7 @@ function MessageList({ messages, actions, onEdit }: { messages: Message[] | unde
     const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
     stick.current = bottom
     setAtBottom(bottom)
+    if (el.scrollTop < 400 && hidden > 0) showEarlier()
   }
 
   return (
@@ -715,13 +717,15 @@ function MessageList({ messages, actions, onEdit }: { messages: Message[] | unde
                 Show {Math.min(hidden, PAGE)} earlier messages
               </Button>
             )}
-            {messages.slice(hidden).map((m, i, shownMessages) =>
-              m.role === 'user' ? (
-                <MemoUserMessage key={m.id} message={m} onEdit={onEdit} />
-              ) : (
-                <MemoAssistantMessage key={m.id} message={m} actions={actions} isLast={i === shownMessages.length - 1} mode={m.mode} />
-              ),
-            )}
+            {messages.slice(hidden).map((m, i, shownMessages) => (
+              <div key={m.id} className={cn(i < shownMessages.length - 2 && '[contain-intrinsic-size:auto_240px] [content-visibility:auto]')}>
+                {m.role === 'user' ? (
+                  <MemoUserMessage message={m} onEdit={onEdit} />
+                ) : (
+                  <MemoAssistantMessage message={m} actions={actions} isLast={i === shownMessages.length - 1} mode={m.mode} />
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>
