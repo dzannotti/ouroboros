@@ -6,7 +6,7 @@ import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { streamSSE } from 'hono/streaming'
 import type { StyleChanges } from '../../shared/styles.ts'
-import type { Access, ChatMode, Part, ProjectEvent, SelectedElement, Version } from '../../shared/types.ts'
+import type { Access, ChatMode, ProjectEvent, QueuedInput, SelectedElement, Version } from '../../shared/types.ts'
 import * as agent from './agent/run.ts'
 import { type User, auth } from './auth.ts'
 import { config, models, projectDir } from './config.ts'
@@ -14,6 +14,7 @@ import { publish, subscribe } from './events.ts'
 import * as git from './git.ts'
 import * as messages from './messages.ts'
 import * as projects from './projects.ts'
+import * as queue from './queue.ts'
 import * as sandbox from './sandbox.ts'
 import { available as browserAvailable, capture, saveThumbnail, thumbnailPath } from './browser.ts'
 import * as approvals from './approvals.ts'
@@ -47,24 +48,11 @@ async function body<T>(c: { req: { json: () => Promise<unknown> } }): Promise<T>
 
 const mode = (m: unknown): ChatMode => (m === 'plan' ? 'plan' : 'build')
 
-function userParts(input: { text?: string; images?: { url: string; name: string }[]; elements?: SelectedElement[] }): Part[] {
-  const parts: Part[] = []
-  if (input.text?.trim()) parts.push({ type: 'text', text: input.text.trim() })
-  for (const img of input.images ?? []) if (typeof img?.url === 'string') parts.push({ type: 'image', url: img.url, name: String(img.name ?? 'image') })
-  const elements = (input.elements ?? [])
-    .filter((e) => typeof e?.oid === 'string')
-    .slice(0, 10)
-    .map((e) => ({ oid: e.oid, tag: String(e.tag ?? ''), text: String(e.text ?? '').slice(0, 300), className: String(e.className ?? '').slice(0, 500), note: typeof e.note === 'string' ? e.note.slice(0, 500) : undefined }))
-  if (elements.length) parts.push({ type: 'elements', elements })
-  if (!parts.length) throw new HTTPException(400, { message: 'Message is empty' })
-  return parts
-}
-
-async function send(projectId: string, author: User, input: { text?: string; images?: { url: string; name: string }[]; elements?: SelectedElement[]; mode?: unknown; model?: unknown }) {
+async function send(projectId: string, author: { id: string; name: string } | undefined, input: { text?: string; images?: { url: string; name: string }[]; elements?: SelectedElement[]; mode?: unknown; model?: unknown }) {
   if (agent.isRunning(projectId)) throw new HTTPException(409, { message: 'Ouroboros is still working on the previous message' })
   const row = await projects.update(projectId, projects.isModel(input.model) ? { model: input.model } : {})
   await answerOpenQuestions(projectId)
-  const user = await messages.create(projectId, 'user', userParts(input), { mode: mode(input.mode), author })
+  const user = await messages.create(projectId, 'user', messages.userParts(input), { mode: mode(input.mode), author })
   publish(projectId, { type: 'message', message: messages.toMessage(user) })
   await agent.startRun({ projectId, userMessageId: user.id, mode: mode(input.mode), model: row.model })
   return user
@@ -211,6 +199,59 @@ api.post('/projects/:id/messages', async (c) => {
   const user = await send(c.req.param('id'), c.get('user'), await body(c))
   return c.json(messages.toMessage(user), 201)
 })
+
+api.get('/projects/:id/queue', async (c) => {
+  await owned(c)
+  return c.json(await queue.list(c.req.param('id')))
+})
+
+api.post('/projects/:id/queue', async (c) => {
+  await owned(c)
+  const id = c.req.param('id')
+  const input = await body<QueuedInput>(c)
+  messages.userParts(input)
+  if (!agent.isRunning(id)) return c.json({ message: messages.toMessage(await send(id, c.get('user'), input)) }, 201)
+  await queue.add(id, c.get('user').id, input)
+  await queue.publish(id)
+  void drain(id)
+  return c.json({}, 201)
+})
+
+api.delete('/projects/:id/queue/:queued', async (c) => {
+  await owned(c)
+  await queue.remove(c.req.param('id'), c.req.param('queued'))
+  await queue.publish(c.req.param('id'))
+  return c.body(null, 204)
+})
+
+const draining = new Set<string>()
+
+async function drain(projectId: string) {
+  if (draining.has(projectId) || agent.isRunning(projectId)) return
+  draining.add(projectId)
+  try {
+    const next = await queue.next(projectId)
+    if (!next) return
+    await queue.remove(projectId, next.id)
+    try {
+      await send(projectId, next.authorId ? { id: next.authorId, name: next.authorName ?? '' } : undefined, next.input)
+    } catch (err) {
+      await queue.restore(next)
+      throw err
+    }
+  } catch (err) {
+    console.error(`[queue] could not send the next queued message for ${projectId}:`, err)
+  } finally {
+    draining.delete(projectId)
+    await queue.publish(projectId).catch(() => {})
+  }
+}
+
+agent.onIdle((projectId) => void drain(projectId))
+
+export async function drainQueues() {
+  for (const projectId of await queue.pending()) void drain(projectId)
+}
 
 api.post('/projects/:id/stop', async (c) => {
   await owned(c)

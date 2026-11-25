@@ -1,7 +1,7 @@
 import type { Message, SelectedElement } from '@shared/types'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDown, ChevronDown, Code2, Copy, Eye, Loader2, Database, Download, ExternalLink, History, Monitor, MousePointerClick, PanelLeftClose, PanelLeftOpen, RefreshCw, Settings2, Share2, Smartphone, Tablet, Trash2, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowDown, ChevronDown, Code2, Copy, Eye, Loader2, Database, Download, ExternalLink, History, Monitor, MousePointerClick, PanelLeftClose, Pencil, PanelLeftOpen, RefreshCw, Settings2, Share2, Smartphone, Tablet, Trash2, X } from 'lucide-react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
 import { Composer, type Draft } from '@/components/chat/composer'
@@ -70,7 +70,8 @@ export default function ProjectPage() {
   const [sharing, setSharing] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [diff, setDiff] = useState<{ sha: string; title: string } | null>(null)
-  const [queue, setQueue] = useState<Draft[]>([])
+  const { data: queue = [] } = useQuery({ queryKey: ['queue', id], queryFn: () => api.queue(id) })
+  const [openQueued, setOpenQueued] = useState<string | null>(null)
   const [snapshot, setSnapshot] = useState<{ sha: string; url?: string; error?: string } | null>(null)
   const preview = useRef<PreviewHandle>(null)
   const desktop = useMediaQuery('(min-width: 768px)')
@@ -113,29 +114,22 @@ export default function ProjectPage() {
     [id, elements],
   )
 
-  const queueRef = useRef<Draft[]>([])
-  const updateQueue = (next: Draft[]) => {
-    queueRef.current = next
-    setQueue(next)
-  }
-
   const send = useCallback(
     async (draft: Draft) => {
-      if (running) updateQueue([...queueRef.current, draft].slice(0, 10))
-      else await dispatch(draft)
+      if (!running) return dispatch(draft)
+      await api.enqueue(id, await draftToInput(id, draft, { elements: elements.length ? elements : undefined }))
+      setElements([])
+      setSelecting(false)
+      setEditing(null)
     },
-    [running, dispatch],
+    [running, dispatch, id, elements],
   )
 
-  useEffect(
-    () =>
-      onProjectEvent((e) => {
-        if (e.type !== 'status' || !queueRef.current.length) return
-        const [next, ...rest] = queueRef.current
-        updateQueue(rest)
-        setTimeout(() => dispatch(next).catch((err: Error) => toast.error(err.message)), 300)
-      }),
-    [dispatch],
+  const unqueue = (queued: string) => void api.unqueue(id, queued).catch((err: Error) => toast.error(err.message))
+
+  const history = useMemo(
+    () => (messages ?? []).flatMap((m) => (m.role === 'user' ? m.parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])) : [])),
+    [messages],
   )
 
   const sendText = useCallback(
@@ -206,20 +200,19 @@ export default function ProjectPage() {
     [id],
   )
 
+  const restoreVersion = restore.mutate
   const actions: MessageActions = useMemo(() => {
-    const lastUser = [...(messages ?? [])].reverse().find((m) => m.role === 'user')
     const order = [...(versions ?? [])].reverse()
     return {
-      onRetry: lastUser
-        ? () => {
-            const t = lastUser.parts.find((p) => p.type === 'text')?.text
-            if (t) void sendText(t)
-          }
-        : undefined,
-      onRestore: (sha) => restore.mutate(sha),
+      onRetry: () => {
+        const lastUser = [...(qc.getQueryData<Message[]>(['messages', id]) ?? [])].reverse().find((m) => m.role === 'user')
+        const t = lastUser?.parts.find((p) => p.type === 'text')?.text
+        if (t) void sendText(t)
+      },
+      onRestore: (sha) => restoreVersion(sha),
       onDiff: (sha, title) => setDiff({ sha, title }),
       onPreview: (sha) => openSnapshot(sha),
-      onUndo: versions && versions.length > 1 ? () => restore.mutate(versions[1].sha) : undefined,
+      onUndo: versions && versions.length > 1 ? () => restoreVersion(versions[1].sha) : undefined,
       onImplementPlan: () => void api.send(id, { text: 'Implement the plan above.', mode: 'build', model }).catch((err: Error) => toast.error(err.message)),
       onAnswer: (t) => void sendText(t),
       onContinue: () => void sendText('Continue where you left off and finish the work.'),
@@ -231,7 +224,7 @@ export default function ProjectPage() {
       currentSha: versions?.[0]?.sha,
       assetUrl: project ? (p) => `${previewOrigin(config)}${project.previewUrl}${p}` : undefined,
     }
-  }, [messages, versions, sendText, restore, project, config, id, model, openSnapshot])
+  }, [versions, sendText, restoreVersion, project, config, id, model, openSnapshot, qc])
 
   if (error) {
     return (
@@ -323,15 +316,42 @@ export default function ProjectPage() {
           <div className="flex shrink-0 flex-col gap-2 px-3 pb-3">
             {queue.length > 0 && (
               <div className="flex flex-col gap-1 rounded-xl border bg-card p-2">
-                <span className="px-1 text-xs text-muted-foreground">Queued ({queue.length}) — sent when the current response finishes</span>
-                {queue.map((q, i) => (
-                  <div key={i} className="flex items-center gap-2 rounded-lg bg-muted/60 px-2 py-1 text-sm">
-                    <span className="min-w-0 flex-1 truncate">{q.text || 'Selected elements'}</span>
-                    <button type="button" className="text-muted-foreground hover:text-foreground" aria-label="Remove from queue" onClick={() => updateQueue(queueRef.current.filter((_, j) => j !== i))}>
-                      <X className="size-3.5" />
-                    </button>
-                  </div>
-                ))}
+                <span className="px-1 text-xs text-muted-foreground">Queued ({queue.length}) — Ouroboros reads these at its next step, even if you close this tab</span>
+                <div className="flex max-h-60 flex-col gap-1 overflow-y-auto">
+                  {queue.map((q) => {
+                    const open = openQueued === q.id
+                    const extras = (q.input.images?.length ?? 0) + (q.input.elements?.length ?? 0)
+                    return (
+                      <div key={q.id} className="flex items-start gap-2 rounded-lg bg-muted/60 px-2 py-1 text-sm">
+                        <button
+                          type="button"
+                          className={cn('min-w-0 flex-1 text-left', open ? 'break-words whitespace-pre-wrap' : 'truncate')}
+                          aria-expanded={open}
+                          title={open ? 'Collapse' : 'Show the whole message'}
+                          onClick={() => setOpenQueued(open ? null : q.id)}
+                        >
+                          {q.input.text || 'Selected elements'}
+                          {extras > 0 && <span className="text-muted-foreground"> · {extras} attachment{extras === 1 ? '' : 's'}</span>}
+                        </button>
+                        <button
+                          type="button"
+                          className="mt-0.5 text-muted-foreground hover:text-foreground"
+                          aria-label="Edit queued message"
+                          title="Move back into the message box"
+                          onClick={() => {
+                            setText(q.input.text ?? '')
+                            unqueue(q.id)
+                          }}
+                        >
+                          <Pencil className="size-3.5" />
+                        </button>
+                        <button type="button" className="mt-0.5 text-muted-foreground hover:text-foreground" aria-label="Remove from queue" onClick={() => unqueue(q.id)}>
+                          <X className="size-3.5" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
             {canEdit && !running && suggestions.length > 0 && !text && (
@@ -364,6 +384,7 @@ export default function ProjectPage() {
                 }}
                 text={text}
                 onTextChange={setText}
+                history={history}
               />
             ) : (
               <div className="flex items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2.5 text-sm text-muted-foreground">
@@ -629,11 +650,31 @@ function IconButton({ label, children, onClick, active, className }: { label: st
   )
 }
 
+const MemoUserMessage = memo(UserMessage)
+const MemoAssistantMessage = memo(AssistantMessage)
+const PAGE = 30
+
 function MessageList({ messages, actions, onEdit }: { messages: Message[] | undefined; actions: MessageActions; onEdit: (text: string) => void }) {
   const scroller = useRef<HTMLDivElement>(null)
   const [atBottom, setAtBottom] = useState(true)
   const content = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
+  const [shown, setShown] = useState(PAGE)
+  const anchor = useRef<number | null>(null)
+  const hidden = Math.max(0, (messages?.length ?? 0) - shown)
+
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (!el || anchor.current === null) return
+    el.scrollTop = el.scrollHeight - anchor.current
+    anchor.current = null
+  }, [shown])
+
+  const showEarlier = () => {
+    const el = scroller.current
+    if (el) anchor.current = el.scrollHeight - el.scrollTop
+    setShown((n) => n + PAGE)
+  }
 
   useEffect(() => {
     const el = scroller.current
@@ -669,8 +710,17 @@ function MessageList({ messages, actions, onEdit }: { messages: Message[] | unde
           </div>
         ) : (
           <div ref={content} className="flex flex-col gap-6 pb-2">
-            {messages.map((m, i) =>
-              m.role === 'user' ? <UserMessage key={m.id} message={m} onEdit={onEdit} /> : <AssistantMessage key={m.id} message={m} actions={actions} isLast={i === messages.length - 1} mode={m.mode} />,
+            {hidden > 0 && (
+              <Button variant="ghost" size="sm" className="self-center text-xs text-muted-foreground" onClick={showEarlier}>
+                Show {Math.min(hidden, PAGE)} earlier messages
+              </Button>
+            )}
+            {messages.slice(hidden).map((m, i, shownMessages) =>
+              m.role === 'user' ? (
+                <MemoUserMessage key={m.id} message={m} onEdit={onEdit} />
+              ) : (
+                <MemoAssistantMessage key={m.id} message={m} actions={actions} isLast={i === shownMessages.length - 1} mode={m.mode} />
+              ),
             )}
           </div>
         )}

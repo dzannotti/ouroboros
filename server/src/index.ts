@@ -6,7 +6,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { Hono } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import * as agent from './agent/run.ts'
-import api from './api.ts'
+import api, { drainQueues } from './api.ts'
 import { authRoutes, startSessionCleanup } from './auth.ts'
 import { config, loadModels, startModelRefresh } from './config.ts'
 import { connect } from './db.ts'
@@ -54,3 +54,4 @@ startPreviewGateway()
 serve({ fetch: app.fetch, port: config.port, hostname: '0.0.0.0' }, (info) => {
   console.log(`[ouroboros] app on http://0.0.0.0:${info.port}, previews on :${config.previewPort}`)
 })
+if (!config.databaseReadOnly) void drainQueues().catch((err) => console.error('[queue] could not resume queues:', err))

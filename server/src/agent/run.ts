@@ -9,6 +9,7 @@ import { publish } from '../events.ts'
 import * as git from '../git.ts'
 import * as messages from '../messages.ts'
 import * as projects from '../projects.ts'
+import * as queue from '../queue.ts'
 import * as sandbox from '../sandbox.ts'
 import { estimateTokens, fitContext } from './compact.ts'
 import { projectContext } from './context.ts'
@@ -25,6 +26,9 @@ type Running = { abort: AbortController; messageId: string }
 const running = new Map<string, Running>()
 
 export const isRunning = (projectId: string) => running.has(projectId)
+
+const idle = new Set<(projectId: string) => void>()
+export const onIdle = (fn: (projectId: string) => void) => idle.add(fn)
 export const runningMessage = (projectId: string) => running.get(projectId)?.messageId
 
 export function stop(projectId: string) {
@@ -110,7 +114,7 @@ async function userContent(projectId: string, parts: Part[], extra = ''): Promis
 }
 
 function compress(m: messages.StoredMessage): ChatCompletionMessageParam {
-  const text = m.parts.filter((p) => p.type === 'text').map((p) => p.text).join('\n').trim()
+  const text = m.parts.flatMap((p) => (p.type === 'text' ? [p.text] : p.type === 'steer' ? [`[The user added mid-turn: ${p.text}]`] : [])).join('\n').trim()
   const files = [...new Set(m.parts.flatMap((p) => (p.type === 'tool' && typeof p.args.path === 'string' && p.name !== 'read_file' ? [p.args.path] : [])))]
   return { role: 'assistant', content: `${text || '(no reply)'}${files.length ? `\n[Files changed in this turn: ${files.join(', ')}]` : ''}` }
 }
@@ -143,7 +147,10 @@ export async function startRun(opts: { projectId: string; userMessageId: string;
   const email = await messages.authorEmail(opts.userMessageId)
   void asUser(email, () => execute({ ...opts, assistantId: assistant.id, abort }))
     .catch((err) => console.error('[agent] run failed:', err))
-    .finally(() => running.delete(opts.projectId))
+    .finally(() => {
+      running.delete(opts.projectId)
+      for (const fn of idle) fn(opts.projectId)
+    })
   return assistant
 }
 
@@ -173,6 +180,12 @@ async function execute(opts: { projectId: string; userMessageId: string; assista
 
     const system: ChatCompletionMessageParam = { role: 'system', content: systemPrompt({ mode, firstTurn, instructions, imageGeneration: Boolean(config.comfy.url), webSearch: Boolean(config.search.url) }) }
     for (let step = 0; step < config.ai.maxSteps; step++) {
+      for (const q of await queue.takeAll(projectId)) {
+        const parts = messages.userParts(q.input)
+        const images = parts.flatMap((p) => (p.type === 'image' ? [{ url: p.url, name: p.name }] : []))
+        stream.add({ type: 'steer', text: q.input.text?.trim() ?? '', images: images.length ? images : undefined, authorName: q.authorName })
+        transcript.push({ role: 'user', content: await userContent(projectId, parts.filter((p) => p.type === 'image'), `The user sent this while you were working. Take it into account, then carry on:\n\n${userText(parts)}`) })
+      }
       if (estimateTokens([system, ...history, ...transcript]) > config.ai.contextBudget) {
         // Compact well below the budget and keep the result, so later steps stay append-only and hit the prompt cache.
         const request = transcript[0]
