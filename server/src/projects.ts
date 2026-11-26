@@ -42,8 +42,9 @@ export async function create(ownerId: string, name: string, model: string): Prom
   await git.init(dir)
   await git.commitAll(dir, 'Initial version')
   const [row] = await sql<Row[]>`
-    insert into projects (id, owner_id, name, model) values (${id}, ${ownerId}, ${name}, ${isModel(model) ? model : config.ai.defaultModel})
-    returning *`
+    with p as (insert into projects (id, owner_id, name, model) values (${id}, ${ownerId}, ${name}, ${isModel(model) ? model : config.ai.defaultModel}) returning *),
+    c as (insert into chats (project_id) select id from p)
+    select * from p`
   return toProject(row)
 }
 
@@ -54,9 +55,12 @@ export async function remix(ownerId: string, source: Row): Promise<Project> {
   await run('git', ['remote', 'remove', 'origin'], { cwd: dir })
   await git.commitAll(dir, `Remixed from ${source.name}`)
   const [row] = await sql<Row[]>`
-    insert into projects (id, owner_id, name, model, instructions, last_good_commit)
-    values (${id}, ${ownerId}, ${`${source.name} (remix)`.slice(0, 60)}, ${source.model}, ${source.instructions}, ${await git.head(dir)})
-    returning *`
+    with p as (
+      insert into projects (id, owner_id, name, model, instructions, last_good_commit)
+      values (${id}, ${ownerId}, ${`${source.name} (remix)`.slice(0, 60)}, ${source.model}, ${source.instructions}, ${await git.head(dir)})
+      returning *),
+    c as (insert into chats (project_id) select id from p)
+    select * from p`
   return toProject(row)
 }
 
