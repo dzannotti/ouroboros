@@ -14,7 +14,7 @@ import * as sandbox from '../sandbox.ts'
 import { estimateTokens, fitContext } from './compact.ts'
 import { projectContext } from './context.ts'
 import { missingDependencies } from './fixers.ts'
-import { asUser, complete, llm, userHeaders } from './llm.ts'
+import { asUser, complete, llm, sessionId, userHeaders } from './llm.ts'
 import { pendingLabel, progressLabel } from './progress.ts'
 import { systemPrompt } from './prompt.ts'
 import { type ToolContext, lint, runTool, toolSchemas, typecheck } from './tools.ts'
@@ -145,7 +145,7 @@ export async function startRun(opts: { projectId: string; userMessageId: string;
   const abort = new AbortController()
   running.set(opts.projectId, { abort, messageId: assistant.id })
   const email = await messages.authorEmail(opts.userMessageId)
-  void asUser(email, () => execute({ ...opts, assistantId: assistant.id, abort }))
+  void asUser(email, () => execute({ ...opts, assistantId: assistant.id, abort }), assistant.chatId)
     .catch((err) => console.error('[agent] run failed:', err))
     .finally(() => {
       running.delete(opts.projectId)
@@ -300,7 +300,7 @@ async function callModel(opts: {
   let firstToken = 0
   let usage: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } | null } | undefined
   const completion = await llm.chat.completions.create(
-    { model: opts.model, messages: opts.messages, tools: opts.tools, stream: true, stream_options: { include_usage: true }, max_tokens: 32_000, parallel_tool_calls: true, ...(config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {}) },
+    { model: opts.model, messages: opts.messages, tools: opts.tools, stream: true, stream_options: { include_usage: true }, max_tokens: 32_000, parallel_tool_calls: true, ...(sessionId() ? { prompt_cache_key: sessionId() } : {}), ...(config.ai.reasoningEffort ? { reasoning_effort: config.ai.reasoningEffort } : {}) },
     { signal: opts.signal, headers: userHeaders() },
   )
   let text = ''

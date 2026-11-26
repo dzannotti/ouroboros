@@ -9,20 +9,24 @@ export const llm = new OpenAI({
   timeout: 10 * 60_000,
 });
 
-const caller = new AsyncLocalStorage<string | null>();
+const caller = new AsyncLocalStorage<{ email: string | null; session?: string }>();
 
-/** Runs `fn` so that every model call it makes, directly or in follow-up work, is attributed to this user's email. */
-export const asUser = <T>(email: string | null, fn: () => T): T =>
-  caller.run(email, fn);
+/** Runs `fn` so that every model call it makes, directly or in follow-up work, is attributed to this user's email and chat session. */
+export const asUser = <T>(email: string | null, fn: () => T, session?: string): T =>
+  caller.run({ email, session }, fn);
 
-/** Per-request headers naming the user behind the current turn (AI_USER_HEADER); empty when unset or the user has no email. */
+/** The chat behind the current turn, sent as `prompt_cache_key` so caches and routers can keep a conversation together. */
+export const sessionId = (): string | undefined => caller.getStore()?.session;
+
+/** Per-request headers naming the user (AI_USER_HEADER) and the chat session (x-litellm-session-id) behind the current turn. */
 export function userHeaders(
   header = config.ai.userHeader,
 ): Record<string, string> {
-  const email = caller.getStore();
-  return header && email && /^[\x21-\x7e]+$/.test(email)
-    ? { [header]: email }
-    : {};
+  const { email, session } = caller.getStore() ?? { email: null };
+  return {
+    ...(header && email && /^[\x21-\x7e]+$/.test(email) ? { [header]: email } : {}),
+    ...(session ? { "x-litellm-session-id": session } : {}),
+  };
 }
 
 /**
@@ -64,6 +68,7 @@ export async function complete(
     {
       model,
       max_tokens: maxTokens,
+      ...(sessionId() ? { prompt_cache_key: sessionId() } : {}),
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },

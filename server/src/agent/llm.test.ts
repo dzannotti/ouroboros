@@ -3,7 +3,7 @@ import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { test } from 'node:test'
 import { config } from '../config.ts'
-import { asUser, billImage, userHeaders } from './llm.ts'
+import { asUser, billImage, sessionId, userHeaders } from './llm.ts'
 
 test('userHeaders names the user behind the current turn', async () => {
   assert.deepEqual(userHeaders('X-User-Email'), {})
@@ -14,6 +14,12 @@ test('userHeaders names the user behind the current turn', async () => {
   })
   asUser(null, () => assert.deepEqual(userHeaders('X-User-Email'), {}))
   asUser('bad\r\nvalue', () => assert.deepEqual(userHeaders('X-User-Email'), {}))
+  await asUser(null, async () => {
+    await new Promise((r) => setTimeout(r, 1))
+    assert.equal(sessionId(), 'chat-12345')
+    assert.deepEqual(userHeaders('X-User-Email'), { 'x-litellm-session-id': 'chat-12345' })
+  }, 'chat-12345')
+  assert.equal(sessionId(), undefined)
 })
 
 test('billImage bills the megapixels drawn to the user behind the turn', async () => {

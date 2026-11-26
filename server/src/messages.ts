@@ -6,6 +6,7 @@ import { sql } from './db.ts'
 type Row = {
   id: string
   projectId: string
+  chatId: string
   role: 'user' | 'assistant'
   parts: Part[]
   transcript: ChatCompletionMessageParam[]
@@ -38,8 +39,8 @@ export const toMessage = (r: Row): Message => ({
 
 export async function create(projectId: string, role: 'user' | 'assistant', parts: Part[], opts: { mode?: ChatMode; status?: MessageStatus; author?: { id: string; name: string } } = {}): Promise<Row> {
   const [row] = await sql<Row[]>`
-    insert into messages (project_id, role, parts, mode, status, author_id)
-    values (${projectId}, ${role}, ${json(parts)}, ${opts.mode ?? 'build'}, ${opts.status ?? 'done'}, ${opts.author?.id ?? null})
+    insert into messages (project_id, chat_id, role, parts, mode, status, author_id)
+    values (${projectId}, (select id from chats where project_id = ${projectId} order by created_at desc limit 1), ${role}, ${json(parts)}, ${opts.mode ?? 'build'}, ${opts.status ?? 'done'}, ${opts.author?.id ?? null})
     returning *`
   return { ...row, authorName: opts.author?.name ?? null }
 }
