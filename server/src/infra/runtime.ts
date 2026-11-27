@@ -61,7 +61,16 @@ export function gatewayFromContainers(): string {
 export const hostGatewayArgs = () => (cli === 'docker' && !sharedNetwork ? ['--add-host', 'host.docker.internal:host-gateway'] : [])
 
 export async function ensureImage(image: string, containerfile: string, contextDir: string) {
-  if ((await containerExec(['image', 'inspect', image])).code === 0) return
-  console.log(`[runtime] building ${image} with ${cli} (first run only)…`)
-  await run(cli, ['build', '-t', image, '-f', containerfile, contextDir], { timeoutMs: 30 * 60_000 })
+  const exists = (await containerExec(['image', 'inspect', image])).code === 0
+  console.log(`[runtime] building ${image} with ${cli}…`)
+  try {
+    await run(cli, ['build', '-t', image, '-f', containerfile, contextDir], { timeoutMs: 30 * 60_000 })
+  } catch (err) {
+    if (!exists) throw err
+    console.warn(`[runtime] building ${image} failed, keeping the existing image:`, (err as Error).message)
+  }
+}
+
+export async function imageId(image: string) {
+  return (await containerExec(['image', 'inspect', '-f', '{{.Id}}', image])).stdout.trim()
 }

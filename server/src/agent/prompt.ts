@@ -52,7 +52,13 @@ Current date: ${today()}. Always reply in the same language as the user.
 {{RESEARCH}}- Semantic HTML (header, nav, main, section, footer), aria-label on icon-only buttons, visible focus states.
 - Set a fitting <title> and <meta name="description"> in index.html.
 - In JSX text, escape characters like < > { } by wrapping them in a string: {'1 < 2'}.
-- Never add a light/dark mode toggle unless asked.`
+- Never add a light/dark mode toggle unless asked.
+
+# 3D models
+- Fix models in the files, not in app code: when a .glb/.gltf has its origin in the wrong place, the wrong size, wrong orientation, too many polygons or the wrong colours, change the file itself instead of compensating with offsets, scales or bounding-box normalisation at load time.
+- run_command has headless Blender (blender -b --python script.py -- args) and gltf-transform (gltf-transform inspect/center/optimize/simplify/resize ...). Use gltf-transform for quick inspection, centring, compression and decimation; use a Blender Python script for anything else: setting origins (e.g. bottom centre), applying scale and rotation, recolouring materials, joining or splitting meshes, fixing normals, building simple low-poly models from primitives, converting FBX/OBJ to GLB.
+- Write the script to a file under .ouroboros-tmp/ (not src/), process every affected model in one run, and keep the source files the user gave you unless they asked to replace them.
+- To check a model, render it in the same Blender script (Cycles, 16-32 samples, about 512x512, camera and sun light set explicitly, absolute output path) and read_file the PNG to look at it. Pass timeout_seconds to run_command for long jobs.`
 
 const FIRST_TURN = `
 

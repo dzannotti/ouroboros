@@ -1,7 +1,15 @@
 FROM docker.io/library/node:22-bookworm-slim
+ARG BLENDER_VERSION=5.2.4
+ARG BLENDER_SHA256=2fd14c50987426897ba60237ee996edf2b4151f4b1a72a460ca20be58c1d2d86
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl procps \
+ && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl procps xz-utils libgl1 libegl1 libopengl0 libxi6 libxrender1 libxkbcommon0 libsm6 libxxf86vm1 libxfixes3 libgomp1 \
+ && curl -fsSL -o /tmp/blender.tar.xz "https://download.blender.org/release/Blender${BLENDER_VERSION%.*}/blender-${BLENDER_VERSION}-linux-x64.tar.xz" \
+ && echo "${BLENDER_SHA256}  /tmp/blender.tar.xz" | sha256sum -c - \
+ && tar -xJf /tmp/blender.tar.xz -C /opt \
+ && ln -s "/opt/blender-${BLENDER_VERSION}-linux-x64/blender" /usr/local/bin/blender \
+ && rm /tmp/blender.tar.xz \
  && rm -rf /var/lib/apt/lists/*
+RUN npm install -g @gltf-transform/cli@4.5.1 && npm cache clean --force
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
     CI=true
 RUN corepack enable && corepack prepare pnpm@11 --activate \
