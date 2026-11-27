@@ -5,6 +5,7 @@ import puppeteer, { type Browser } from 'puppeteer-core'
 import { config } from './config.ts'
 import * as sandbox from './sandbox.ts'
 
+const GPU = existsSync('/dev/dri/renderD128') ? ['--use-angle=vulkan', '--enable-features=Vulkan', '--ignore-gpu-blocklist'] : []
 const CHROME = [process.env.CHROME_PATH, '/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find((p) => p && existsSync(p))
 
 let browser: Promise<Browser> | null = null
@@ -13,7 +14,7 @@ let open = 0
 
 function launch() {
   if (!CHROME) throw new Error('No Chrome/Chromium found (set CHROME_PATH)')
-  browser ??= puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] }).then((b) => {
+  browser ??= puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', ...GPU] }).then((b) => {
     b.on('disconnected', () => (browser = null))
     return b
   })
@@ -23,6 +24,9 @@ function launch() {
 export const available = () => Boolean(CHROME)
 
 export type Capture = { image: Uint8Array; errors: string[] }
+
+const within = <T>(work: Promise<T>, ms: number, what: string) =>
+  Promise.race([work, new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`${what} took longer than ${ms / 1000}s`)), ms).unref())])
 
 export async function capture(projectId: string, route = '/', opts: { width?: number; height?: number; fullPage?: boolean } = {}): Promise<Capture> {
   await sandbox.ensure(projectId)
@@ -44,18 +48,31 @@ export async function capture(projectId: string, route = '/', opts: { width?: nu
   try {
     await page.setViewport({ width: opts.width ?? 1280, height: opts.height ?? 800 })
     const url = `${sandbox.url(projectId)}/p/${projectId}${route.startsWith("/") ? route : `/${route}`}`
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 })
-    await page.evaluate(async () => {
-      for (let y = 0; y < document.documentElement.scrollHeight; y += window.innerHeight * 0.8) {
-        window.scrollTo(0, y)
-        await new Promise((r) => setTimeout(r, 120))
-      }
-      window.scrollTo(0, 0)
-    })
-    await page.waitForNetworkIdle({ idleTime: 400, timeout: 8000 }).catch(() => {})
-    const broken = await page.evaluate(() => [...document.images].filter((i) => i.complete && i.naturalWidth === 0 && i.currentSrc).map((i) => `${i.getAttribute('src')} (alt: "${i.alt}")`))
-    for (const b of broken) errors.push(`Broken image: ${b}`)
-    const image = await page.screenshot({ type: 'jpeg', quality: 80, fullPage: opts.fullPage ?? false })
+    const loaded = await page.goto(url, { waitUntil: 'networkidle2', timeout: 30_000 }).then(
+      () => true,
+      () => (errors.push('The page did not finish loading within 30s (still busy or still fetching); this screenshot shows it as it was then.'), false),
+    )
+    if (loaded) {
+      await within(
+        page.evaluate(async () => {
+          for (let y = 0; y < document.documentElement.scrollHeight; y += window.innerHeight * 0.8) {
+            window.scrollTo(0, y)
+            await new Promise((r) => setTimeout(r, 120))
+          }
+          window.scrollTo(0, 0)
+        }),
+        15_000,
+        'Scrolling through the page',
+      ).catch((err: Error) => errors.push(err.message))
+      await page.waitForNetworkIdle({ idleTime: 400, timeout: 8000 }).catch(() => {})
+      const broken = await within(
+        page.evaluate(() => [...document.images].filter((i) => i.complete && i.naturalWidth === 0 && i.currentSrc).map((i) => `${i.getAttribute('src')} (alt: "${i.alt}")`)),
+        5000,
+        'Checking images',
+      ).catch(() => [])
+      for (const b of broken) errors.push(`Broken image: ${b}`)
+    }
+    const image = await within(page.screenshot({ type: 'jpeg', quality: 80, fullPage: opts.fullPage ?? false }), 30_000, 'Taking the screenshot')
     return { image, errors: [...new Set(errors)].slice(0, 20) }
   } finally {
     await page.close().catch(() => {})
