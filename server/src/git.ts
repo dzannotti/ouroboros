@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { exec, run } from './infra/exec.ts'
 
@@ -13,6 +13,12 @@ export async function init(dir: string) {
 async function heal(dir: string) {
   const lock = path.join(dir, '.git', 'index.lock')
   if (existsSync(lock)) await rm(lock, { force: true })
+  const exclude = path.join(dir, '.git', 'info', 'exclude')
+  const current = existsSync(exclude) ? await readFile(exclude, 'utf8') : ''
+  if (!current.split('\n').includes('.ouroboros-tmp/')) {
+    await mkdir(path.dirname(exclude), { recursive: true })
+    await writeFile(exclude, `${current}${current && !current.endsWith('\n') ? '\n' : ''}.ouroboros-tmp/\n`)
+  }
 }
 
 export async function commitAll(dir: string, message: string): Promise<string | null> {

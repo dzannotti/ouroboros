@@ -225,7 +225,7 @@ async function execute(opts: { projectId: string; userMessageId: string; assista
         if (out.image) images.push({ type: 'image_url', image_url: { url: `data:image/jpeg;base64,${Buffer.from(out.image).toString('base64')}` } })
         if (out.endTurn) endTurn = true
       }
-      if (images.length) transcript.push({ role: 'user', content: [{ type: 'text', text: 'Screenshot(s) requested by the screenshot tool:' }, ...images] })
+      if (images.length) transcript.push({ role: 'user', content: [{ type: 'text', text: 'Image(s) returned by the tools above:' }, ...images] })
       if (endTurn) break
       if (step === config.ai.maxSteps - 1) {
         if (ctx.changed.size) checksPassed = (await postTurnChecks(projectId, ctx, stream, abort.signal)).ok

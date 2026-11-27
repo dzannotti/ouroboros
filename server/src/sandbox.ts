@@ -6,7 +6,7 @@ import type { SandboxStatus } from '../../shared/types.ts'
 import { config, projectDir } from './config.ts'
 import { publish } from './events.ts'
 import type { ExecResult } from './infra/exec.ts'
-import { address, cli, container, containerExec, hostPath, isRunning, reachability, relabel } from './infra/runtime.ts'
+import { address, cli, container, containerExec, hostPath, imageId, isRunning, reachability, relabel } from './infra/runtime.ts'
 
 const DEV_PORT = 5173
 const POLL = (() => {
@@ -69,7 +69,11 @@ export function clearLogs(id: string) {
 
 async function ensureContainer(id: string) {
   const name = containerName(id)
-  const inspect = await containerExec(['container', 'inspect', '-f', '{{.State.Running}}', name])
+  let inspect = await containerExec(['container', 'inspect', '-f', '{{.State.Running}} {{.Image}}', name])
+  if (inspect.code === 0 && inspect.stdout.trim().split(' ')[1] !== (await imageId(config.sandboxImage))) {
+    await container(['rm', '-f', name])
+    inspect = await containerExec(['container', 'inspect', name])
+  }
   if (inspect.code !== 0) {
     await container([
       'run', '-d', '--init', '--name', name,

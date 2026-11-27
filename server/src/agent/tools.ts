@@ -141,7 +141,7 @@ async function walk(dir: string, root: string, out: string[], limit: number) {
 export const tools: Tool[] = [
   {
     name: 'read_file',
-    description: 'Read a file from the project. Returns the content with line numbers. For large files use offset/limit (1-based line numbers).',
+    description: 'Read a file from the project. Returns the content with line numbers. For large files use offset/limit (1-based line numbers). For a .png, .jpg or .webp image, returns the image so you can look at it.',
     readOnly: true,
     parameters: {
       type: 'object',
@@ -153,6 +153,10 @@ export const tools: Tool[] = [
       const { full, rel: p } = rel(ctx, str(args, 'path'))
       if (!existsSync(full)) throw new ToolError(`File not found: ${p}`)
       if ((await stat(full)).isDirectory()) throw new ToolError(`${p} is a directory; use list_files`)
+      if (/\.(png|jpe?g|webp)$/i.test(p)) {
+        const image = await sharp(full).resize(1024, 1024, { fit: 'inside', withoutEnlargement: true }).flatten({ background: '#808080' }).jpeg({ quality: 85 }).toBuffer()
+        return { output: `Image ${p} attached below.`, image }
+      }
       const lines = (await readFile(full, 'utf8')).split('\n')
       const offset = Math.max(1, Number(args.offset) || 1)
       const limit = Number(args.limit) || 800
@@ -325,16 +329,21 @@ export const tools: Tool[] = [
   },
   {
     name: 'run_command',
-    description: 'Run a shell command in the project sandbox (Linux, working directory = project root). Use for things like inspecting node_modules or running a one-off script. Never start the dev server or long-running processes; use add_dependency for installs.',
-    parameters: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'] },
+    description: 'Run a shell command in the project sandbox (Linux, working directory = project root). Use for things like inspecting node_modules, running a one-off script, or Blender and gltf-transform for 3D models. Never start the dev server or long-running processes; use add_dependency for installs.',
+    parameters: {
+      type: 'object',
+      properties: { command: { type: 'string' }, timeout_seconds: { type: 'number', description: 'Default 120, at most 900' } },
+      required: ['command'],
+    },
     label: (a) => `Ran ${String(a.command).slice(0, 60)}`,
     async run(args, ctx) {
       const command = str(args, 'command')
       if (/\b(vite|pnpm\s+(run\s+)?dev|npm\s+(run\s+)?dev|pnpm\s+(run\s+)?preview)\b/.test(command) && !/vite\s+(build|--version)/.test(command)) {
         throw new ToolError('The dev server is managed by the platform and is already running.')
       }
-      const res = await sandbox.execIn(ctx.projectId, command, { timeoutMs: 120_000, signal: ctx.signal })
-      const out = `exit code ${res.code}${res.timedOut ? ' (timed out after 120s)' : ''}\n${res.stdout}${res.stderr ? `\n[stderr]\n${res.stderr}` : ''}`
+      const seconds = Math.min(900, Math.max(1, Number(args.timeout_seconds) || 120))
+      const res = await sandbox.execIn(ctx.projectId, command, { timeoutMs: seconds * 1000, signal: ctx.signal })
+      const out = `exit code ${res.code}${res.timedOut ? ` (timed out after ${seconds}s)` : ''}\n${res.stdout}${res.stderr ? `\n[stderr]\n${res.stderr}` : ''}`
       return { output: truncate(out), error: res.code !== 0, summary: `exit ${res.code}` }
     },
   },
