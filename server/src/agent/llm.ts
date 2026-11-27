@@ -63,11 +63,13 @@ export async function complete(
   system: string,
   user: string,
   maxTokens = 4000,
+  reasoning?: 'low' | 'medium' | 'high',
 ): Promise<string> {
   const res = await llm.chat.completions.create(
     {
       model,
       max_tokens: maxTokens,
+      ...(reasoning ? { reasoning_effort: reasoning } : {}),
       ...(sessionId() ? { prompt_cache_key: sessionId() } : {}),
       messages: [
         { role: "system", content: system },
