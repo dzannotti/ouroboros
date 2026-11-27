@@ -1,7 +1,7 @@
 FROM docker.io/library/node:22-bookworm-slim
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends git chromium ca-certificates curl fonts-noto-color-emoji \
+ && apt-get install -y --no-install-recommends git chromium mesa-vulkan-drivers ca-certificates curl fonts-noto-color-emoji \
  && rm -rf /var/lib/apt/lists/* \
  && git config --system safe.directory '*'
 COPY --from=docker.io/library/docker:cli /usr/local/bin/docker /usr/local/bin/docker
