@@ -158,7 +158,7 @@ async function execute(opts: { projectId: string; userMessageId: string; assista
   const { projectId, mode, model, abort } = opts
   const stream = new Stream(projectId, opts.assistantId)
   const transcript: ChatCompletionMessageParam[] = []
-  const ctx: ToolContext = { projectId, model, mode, signal: abort.signal, changed: new Set(), startedAt: Date.now(), emit: (p) => stream.add(p), update: (i, p) => stream.set(i, p) }
+  const ctx: ToolContext = { projectId, model, mode, signal: abort.signal, changed: new Set(), startedAt: Date.now(), progress: () => {}, emit: (p) => stream.add(p), update: (i, p) => stream.set(i, p) }
   const dir = projectDir(projectId)
   let status: 'done' | 'error' | 'stopped' = 'done'
   let checksPassed: boolean | null = null
@@ -215,6 +215,7 @@ async function execute(opts: { projectId: string; userMessageId: string; assista
       const images: ChatCompletionContentPart[] = []
       for (const call of result.toolCalls) {
         const index = result.toolParts.get(call.id)!
+        ctx.progress = (label) => stream.set(index, { ...(stream.parts[index] as ToolPart), label })
         const { label, args, result: out } = await runTool(call.function.name, call.function.arguments, ctx)
         const part = stream.parts[index] as ToolPart
         stream.set(index, { ...part, label, args: summarizeArgs(args), status: out.error ? 'error' : 'done', result: out.output.slice(0, 4000), summary: out.summary })

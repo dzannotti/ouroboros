@@ -15,6 +15,7 @@ import { sql } from '../db.ts'
 import sharp from 'sharp'
 import { generateImage } from './images.ts'
 import { complete } from './llm.ts'
+import { deepResearch } from './research.ts'
 
 export type ToolContext = {
   emit: (part: Part) => number
@@ -25,6 +26,7 @@ export type ToolContext = {
   signal: AbortSignal
   changed: Set<string>
   startedAt: number
+  progress: (label: string) => void
 }
 
 export type ToolResult = { output: string; summary?: string; error?: boolean; endTurn?: boolean; part?: Part; image?: Uint8Array }
@@ -386,10 +388,33 @@ export const tools: Tool[] = [
     parameters: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] },
     label: (a) => `Searched the web for "${String(a.query).slice(0, 60)}"`,
     async run(args, ctx) {
-      const url = `${config.search.url}/search?format=json&q=${encodeURIComponent(str(args, 'query'))}`
-      const res = await fetch(url, { signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(20_000)]), headers: { accept: 'application/json' } })
-      if (!res.ok) throw new ToolError(`Search failed (HTTP ${res.status})`)
-      return { output: formatResults((await res.json()) as SearchResponse) }
+      return { output: formatResults(await searchWeb(str(args, 'query'), ctx.signal)) }
+    },
+  },
+  {
+    name: 'deep_research',
+    description:
+      'Research a question in depth on the web: plans searches, reads the pages (rendering JavaScript ones), follows up on gaps over several rounds and returns a cited report, also saved under .ouroboros-tmp/research/. Takes a few minutes. Use it when the user asks you to research something, or before building something that depends on a real product, market, domain or set of competitors you would otherwise guess at (e.g. "make an app like X": research what X does, its features, flows and pricing). For one quick fact or a library API, use web_search instead.',
+    readOnly: true,
+    parameters: {
+      type: 'object',
+      properties: {
+        question: { type: 'string', description: 'The full research question with all the context that matters: what you need to know and why' },
+        depth: { type: 'string', enum: ['quick', 'standard', 'deep'], description: 'quick: one round; standard (default): follows up once; deep: follows up twice' },
+      },
+      required: ['question'],
+    },
+    label: (a) => `Researched "${String(a.question).slice(0, 60)}"`,
+    async run(args, ctx) {
+      const question = str(args, 'question')
+      const level = ({ quick: [3, 1], standard: [4, 2], deep: [5, 3] } as const)[String(args.depth) as 'quick'] ?? [4, 2]
+      const { report, sources, searches } = await deepResearch(question, { model: ctx.model, breadth: level[0], depth: level[1], signal: ctx.signal, progress: ctx.progress })
+      if (!report) return { output: `No usable sources found after ${searches} searches. Try rephrasing the question.`, error: true }
+      const name = `${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}-${question.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 50).replace(/-$/, '')}.md`
+      const file = path.join(projectDir(ctx.projectId), '.ouroboros-tmp', 'research', name)
+      await mkdir(path.dirname(file), { recursive: true })
+      await writeFile(file, `# ${question}\n\n${report}\n`)
+      return { output: `${truncate(report, 18_000)}\n\n(Saved to .ouroboros-tmp/research/${name}; ${searches} searches, ${sources.length} sources.)`, summary: `${sources.length} sources` }
     },
   },
   {
@@ -401,21 +426,49 @@ export const tools: Tool[] = [
     async run(args, ctx) {
       const url = str(args, 'url')
       if (!/^https?:\/\//.test(url)) throw new ToolError('Only http(s) URLs are supported')
-      const res = await fetch(url, { signal: AbortSignal.any([ctx.signal, AbortSignal.timeout(20_000)]), headers: { 'user-agent': 'Mozilla/5.0 Ouroboros' } })
-      const type = res.headers.get('content-type') ?? ''
-      let body = await res.text()
-      if (type.includes('html')) {
-        body = body
-          .replace(/<(script|style|noscript|svg)[\s\S]*?<\/\1>/gi, '')
-          .replace(/<\/(p|div|h\d|li|tr|section|article|header|footer|br)>/gi, '\n')
-          .replace(/<[^>]+>/g, ' ')
-          .replace(/&nbsp;/g, ' ')
-          .replace(/&amp;/g, '&')
-          .replace(/[ \t]+/g, ' ')
-          .replace(/\n\s*\n+/g, '\n\n')
-          .trim()
-      }
-      return { output: truncate(`HTTP ${res.status}\n${body}`, 15_000) }
+      const { status, body } = await fetchText(url, ctx.signal)
+      return { output: truncate(`HTTP ${status}\n${body}`, 15_000) }
+    },
+  },
+  {
+    name: 'browse',
+    description:
+      'Open any website in a real headless browser (JavaScript runs, so single-page apps work), optionally click and type through it, and look at the result: returns a screenshot, the visible text, same-site links and the API calls the page made. Everything is also saved under .ouroboros-tmp/site/<host>/ for you to dig into with search_files, read_file and run_command: pages/<page>/rendered.html (DOM after JavaScript), original.html (as served), text.txt, network.json (every fetch/XHR with request and response bodies), assets/ (every script and stylesheet as served) and sources/ (original source files rebuilt from published source maps, when the site has them). Use it to study an existing product, reference site or competitor the user points at. Use what you learn as reference for your own implementation; never copy their code, text, images or branding into the project.',
+    readOnly: true,
+    parameters: {
+      type: 'object',
+      properties: {
+        url: { type: 'string' },
+        mobile: { type: 'boolean', description: 'Use a phone viewport' },
+        steps: {
+          type: 'array',
+          description: 'Actions to perform in order after the page loads, e.g. [{"click":"Pricing"},{"type":"hello","into":"Search"},{"press":"Enter"}]. click and into take a CSS selector or the visible text, placeholder, aria-label or name of an element.',
+          items: { type: 'object', properties: { click: { type: 'string' }, type: { type: 'string' }, into: { type: 'string' }, press: { type: 'string', description: 'Key name, e.g. Enter' } } },
+        },
+      },
+      required: ['url'],
+    },
+    label: (a) => `Browsed ${String(a.url).replace(/^https?:\/\//, '').slice(0, 50)}`,
+    async run(args, ctx) {
+      if (!browser.available()) throw new ToolError('The browser is not available on this server')
+      const url = str(args, 'url')
+      if (!/^https?:\/\//.test(url)) throw new ToolError('Only http(s) URLs are supported')
+      const base = path.join(projectDir(ctx.projectId), '.ouroboros-tmp', 'site')
+      const host = new URL(url).host.replace(/[^\w.-]/g, '_')
+      const steps = Array.isArray(args.steps) ? (args.steps as browser.Step[]) : []
+      const v = await browser.browse(url, path.join(base, host), { mobile: Boolean(args.mobile), steps })
+      const where = `.ouroboros-tmp/site/${host}`
+      const calls = v.calls.filter((c) => !/\.(png|jpe?g|gif|svg|webp|woff2?|ico)(\?|$)/.test(c.url))
+      const output = [
+        `${v.title || '(no title)'} — ${v.url}`,
+        v.errors.length ? `Problems:\n${v.errors.join('\n')}` : '',
+        `Saved ${v.files.length} files under ${where}/${v.sources ? ` including ${v.sources} original source files rebuilt from source maps in ${where}/sources/` : ' (no source maps published)'}.`,
+        calls.length ? `API calls (${calls.length}, full bodies in network.json):\n${calls.slice(0, 25).map((c) => `${c.method} ${c.status} ${c.url.slice(0, 160)}`).join('\n')}` : 'No API calls.',
+        v.links.length ? `Links:\n${v.links.slice(0, 40).join('\n')}` : '',
+        `Visible text:\n${truncate(v.text.trim(), 5000)}`,
+        'Screenshot attached below.',
+      ]
+      return { output: output.filter(Boolean).join('\n\n'), image: v.image, summary: `${v.files.length} files` }
     },
   },
   {
@@ -687,6 +740,30 @@ export async function typecheck(projectId: string, signal?: AbortSignal): Promis
   return { ok: res.code === 0, output: output || `tsc exited with ${res.code}` }
 }
 
+export async function fetchText(url: string, signal: AbortSignal): Promise<{ status: number; body: string }> {
+  const res = await fetch(url, { signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]), headers: { 'user-agent': 'Mozilla/5.0 Ouroboros' } })
+  const type = res.headers.get('content-type') ?? ''
+  let body = await res.text()
+  if (type.includes('html')) {
+    body = body
+      .replace(/<(script|style|noscript|svg)[\s\S]*?<\/\1>/gi, '')
+      .replace(/<\/(p|div|h\d|li|tr|section|article|header|footer|br)>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/[ \t]+/g, ' ')
+      .replace(/\n\s*\n+/g, '\n\n')
+      .trim()
+  }
+  return { status: res.status, body }
+}
+
+export async function searchWeb(query: string, signal: AbortSignal): Promise<SearchResponse> {
+  const res = await fetch(`${config.search.url}/search?format=json&q=${encodeURIComponent(query)}`, { signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]), headers: { accept: 'application/json' } })
+  if (!res.ok) throw new ToolError(`Search failed (HTTP ${res.status})`)
+  return (await res.json()) as SearchResponse
+}
+
 type SearchResponse = { results?: { title?: string; url?: string; content?: string }[] }
 
 export function formatResults(body: SearchResponse, limit = 8): string {
@@ -711,7 +788,7 @@ export async function lint(projectId: string, files: Iterable<string>, signal?: 
 }
 
 export function toolsFor(mode: ChatMode) {
-  const available = tools.filter((t) => (t.name === 'generate_image' ? Boolean(config.comfy.url) : t.name === 'web_search' ? Boolean(config.search.url) : t.name === 'screenshot' ? browser.available() : true))
+  const available = tools.filter((t) => (t.name === 'generate_image' ? Boolean(config.comfy.url) : t.name === 'web_search' || t.name === 'deep_research' ? Boolean(config.search.url) : t.name === 'screenshot' || t.name === 'browse' ? browser.available() : true))
   return mode === 'plan' ? available.filter((t) => t.readOnly && t.name !== 'update_plan' && t.name !== 'generate_design_brief') : available
 }
 
